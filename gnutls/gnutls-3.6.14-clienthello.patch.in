@@ -1,0 +1,157 @@
+This file is part of the tlsclient project, (c) 2020 by Andreas Steinmetz
+The license for this file is the license(s) of the the library this patch
+applies to.
+
+diff -rNup gnutls-3.6.14.orig/lib/clienthello.h gnutls-3.6.14/lib/clienthello.h
+--- gnutls-3.6.14.orig/lib/clienthello.h	1970-01-01 01:00:00.000000000 +0100
++++ gnutls-3.6.14/lib/clienthello.h	2020-08-04 13:33:03.269879931 +0200
+@@ -0,0 +1,81 @@
++#ifdef _DLFCN_H
++#undef _DLFCN_H
++#endif
++#ifdef _FEATURES_H
++#undef _FEATURES_H
++#endif
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#include <dlfcn.h>
++#undef _GNU_SOURCE
++#else
++#include <dlfcn.h>
++#endif
++#include "ext/pre_shared_key.h"
++
++static const char *str1=__STR1__;
++static const char *str2=__STR2__;
++
++#define get_modify_address(dst)					\
++do								\
++{								\
++	int idx;						\
++	char bfr[32];						\
++	for(idx=0;idx<32;idx++)bfr[idx]=str1[idx]^str2[idx];	\
++	dst=dlvsym(RTLD_DEFAULT,bfr+1,bfr+bfr[0]+1);		\
++} while(0)
++
++static inline __attribute__((always_inline)) int complete_packet_modify(
++	gnutls_session_t session,gnutls_buffer_t extdata)
++{
++	int i;
++	int pos;
++	int (*modify)(void *buffer,int fill,int max,unsigned char *random,
++		int randlen,int tlshdr,int mode);
++	unsigned char random[32];
++
++	if(IS_DTLS(session))return 0;
++	get_modify_address(modify);
++	if(!modify)return 0;
++	if(gnutls_rnd(GNUTLS_RND_NONCE,random,32))return -1;
++	if(extdata->data!=extdata->allocd)
++	{
++		memmove(extdata->allocd,extdata->data,extdata->length);
++		extdata->data=extdata->allocd;
++	}
++	extdata->length+=modify(extdata->data+sizeof(mbuffer_st),
++		extdata->length-sizeof(mbuffer_st),
++		extdata->max_length-sizeof(mbuffer_st),random,32,-1,2);
++	if(!(pos=modify(extdata->data+sizeof(mbuffer_st),
++		extdata->length-sizeof(mbuffer_st),0,NULL,0,0,6)))return 0;
++	extdata->length=pos+sizeof(mbuffer_st)+4;
++	if(ext_mod_pre_shared_key.send_func(session,extdata)<0)return -1;
++	i=extdata->length-pos-sizeof(mbuffer_st)-4;
++	extdata->data[pos+2+sizeof(mbuffer_st)]=(unsigned char)(i>>8);
++	extdata->data[pos+3+sizeof(mbuffer_st)]=(unsigned char)(i);
++	return 0;
++}
++
++static inline __attribute__((always_inline))  int cipher_suite_modify(
++	unsigned char *list,int fill,int max)
++{
++	int (*modify)(void *buffer,int fill,int max,unsigned char *random,
++		int randlen,int tlshdr,int mode);
++	unsigned char random[4];
++
++	get_modify_address(modify);
++	if(!modify)return 0;
++	if(gnutls_rnd(GNUTLS_RND_NONCE,random,4))return -1;
++	return fill+modify(list,fill,max,random,sizeof(random),0,4);
++}
++
++static inline __attribute__((always_inline)) int compmeth_array_modify(
++	unsigned char *list,int fill,int max)
++{
++	int (*modify)(void *buffer,int fill,int max,unsigned char *random,
++		int randlen,int tlshdr,int mode);
++
++	get_modify_address(modify);
++	if(!modify)return 0;
++	return fill+modify(list,fill,max,NULL,0,0,5);
++}
+diff -rNup gnutls-3.6.14.orig/lib/handshake.c gnutls-3.6.14/lib/handshake.c
+--- gnutls-3.6.14.orig/lib/handshake.c	2020-06-01 19:47:29.000000000 +0200
++++ gnutls-3.6.14/lib/handshake.c	2020-08-04 13:32:56.766546311 +0200
+@@ -60,6 +60,7 @@
+ #ifdef HAVE_VALGRIND_MEMCHECK_H
+ #include <valgrind/memcheck.h>
+ #endif
++#include "clienthello.h"
+ 
+ #define TRUE 1
+ #define FALSE 0
+@@ -2061,12 +2062,14 @@ static int
+ append_null_comp(gnutls_session_t session,
+ 			  gnutls_buffer_st * cdata)
+ {
+-	uint8_t compression_methods[2] = {0x01, 0x00};
++	uint8_t compression_methods[5] = {0x01, 0x00, 0x00, 0x00, 0x00};
+ 	size_t init_length = cdata->length;
+ 	int ret;
+ 
+-	ret =
+-	    _gnutls_buffer_append_data(cdata, compression_methods, 2);
++	compression_methods[0] =
++		compmeth_array_modify(compression_methods + 1, 1, 4);
++	ret = _gnutls_buffer_append_data(cdata, compression_methods,
++		compression_methods[0] + 1);
+ 	if (ret < 0)
+ 		return gnutls_assert_val(ret);
+ 
+@@ -2286,6 +2289,11 @@ static int send_client_hello(gnutls_sess
+ 			}
+ 		}
+ 
++		if (complete_packet_modify(session, &extdata)) {
++			gnutls_assert();
++			goto cleanup;
++		}
++
+ 		bufel = _gnutls_buffer_to_mbuffer(&extdata);
+ 	}
+ 
+diff -rNup gnutls-3.6.14.orig/lib/algorithms/ciphersuites.c gnutls-3.6.14/lib/algorithms/ciphersuites.c
+--- gnutls-3.6.14.orig/lib/algorithms/ciphersuites.c	2020-06-01 11:48:13.000000000 +0200
++++ gnutls-3.6.14/lib/algorithms/ciphersuites.c	2020-08-04 13:32:56.769879645 +0200
+@@ -31,6 +31,7 @@
+ #include <auth/anon.h>
+ #include <auth/psk.h>
+ #include <ext/safe_renegotiation.h>
++#include "clienthello.h"
+ 
+ #ifndef ENABLE_SSL3
+ # define GNUTLS_SSL3 GNUTLS_TLS1
+@@ -1666,6 +1667,15 @@ _gnutls_get_client_ciphersuites(gnutls_s
+ 		cipher_suites_size += 2;
+ 	}
+ 
++	if(!IS_DTLS(session)) {
++		cipher_suites_size = cipher_suite_modify(cipher_suites,
++				cipher_suites_size, sizeof(cipher_suites));
++		if ((int)cipher_suites_size < 0) {
++			gnutls_assert();
++			return -1;
++		}
++	}
++
+ 	ret = _gnutls_buffer_append_data_prefix(cdata, 16, cipher_suites, cipher_suites_size);
+ 	if (ret < 0)
+ 		return gnutls_assert_val(ret);

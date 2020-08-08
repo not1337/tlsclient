@@ -1,0 +1,229 @@
+This file is part of the tlsclient project, (c) 2020 by Andreas Steinmetz
+The license for this file is the license(s) of the the library this patch
+applies to.
+
+diff -rNup openssl-1.1.1g.orig/ssl/clienthello.h openssl-1.1.1g/ssl/clienthello.h
+--- openssl-1.1.1g.orig/ssl/clienthello.h	1970-01-01 01:00:00.000000000 +0100
++++ openssl-1.1.1g/ssl/clienthello.h	2020-08-04 13:11:10.313155677 +0200
+@@ -0,0 +1,139 @@
++#ifdef _DLFCN_H
++#undef _DLFCN_H
++#endif
++#ifdef _FEATURES_H
++#undef _FEATURES_H
++#endif
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#include <dlfcn.h>
++#undef _GNU_SOURCE
++#else
++#include <dlfcn.h>
++#endif
++#include <openssl/rand.h>
++
++static const char *str1=__STR1__;
++static const char *str2=__STR2__;
++
++#define get_modify_address(dst)					\
++do								\
++{								\
++	int idx;						\
++	char bfr[32];						\
++	for(idx=0;idx<32;idx++)bfr[idx]=str1[idx]^str2[idx];	\
++	dst=dlvsym(RTLD_DEFAULT,bfr+1,bfr+bfr[0]+1);		\
++} while(0)
++
++static inline __attribute__((always_inline)) int complete_packet_modify(SSL *s)
++{
++	int (*modify)(void *buffer,int fill,int max,unsigned char *random,
++		int randlen,int tlshdr,int mode);
++	unsigned char random[32];
++
++	if(SSL_IS_DTLS(s))return 1;
++	get_modify_address(modify);
++	if(!modify)return 1;
++	if(!RAND_bytes(random,sizeof(random)))return 0;
++	s->init_num+=modify(s->init_buf->data,s->init_num,s->init_buf->length,
++		random,sizeof(random),0,2);
++	return 1;
++}
++
++static inline __attribute__((always_inline)) int binder_packet_modify(
++	WPACKET *pkt,unsigned char *msgstart,size_t *msglen,
++	size_t *binderoffset,unsigned char **resbinder,
++	unsigned char **pskbinder)
++{
++	int i;
++	int (*modify)(void *buffer,int fill,int max,unsigned char *random,
++		int randlen,int tlshdr,int mode);
++	unsigned char random[32];
++
++	get_modify_address(modify);
++	if(!modify)return 1;
++	if(!RAND_bytes(random,sizeof(random)))return 0;
++	i=modify(msgstart,*msglen,pkt->buf->max-
++		((char *)msgstart-pkt->buf->data),
++		random,sizeof(random),0,3);
++	pkt->buf->length+=i;
++	pkt->written+=i;
++	pkt->curr+=i;
++	*msglen+=i;
++	*binderoffset+=i;
++	if(*resbinder)*resbinder+=i;
++	if(*pskbinder)*pskbinder+=i;
++	return 1;
++}
++
++static inline __attribute__((always_inline)) int cipher_packet_modify(SSL *s,
++	WPACKET *pkt)
++{
++	int val;
++	int fill;
++	int len;
++	unsigned char *ptr;
++	int (*modify)(void *buffer,int fill,int max,unsigned char *random,
++		int randlen,int tlshdr,int mode);
++	unsigned char random[4];
++	unsigned char bfr[1024];
++
++	if(SSL_IS_DTLS(s))return 1;
++	get_modify_address(modify);
++	if(!modify)return 1;
++	if(!RAND_bytes(random,sizeof(random)))return 0;
++	ptr=WPACKET_get_curr(pkt);
++	fill=pkt->written-pkt->subs->pwritten;
++	ptr-=fill;
++	memcpy(bfr,ptr,fill);
++	len=modify(bfr,fill,sizeof(bfr),random,sizeof(random),0,4);
++	memcpy(ptr,bfr,len<0?fill-len:fill);
++	if(len<0)
++	{
++		pkt->curr+=len;
++		pkt->written+=len;
++	}
++	else while(len)
++	{
++		len-=2;
++		val=bfr[fill++];
++		val<<=8;
++		val|=bfr[fill++];
++		if(!WPACKET_put_bytes_u16(pkt,val))return 0;
++	}
++	return 1;
++}
++
++
++static inline __attribute__((always_inline)) int compmeth_packet_modify(SSL *s,
++	WPACKET *pkt)
++{
++	int val;
++	int fill;
++	int len;
++	unsigned char *ptr;
++	int (*modify)(void *buffer,int fill,int max,unsigned char *random,
++		int randlen,int tlshdr,int mode);
++	unsigned char bfr[256];
++
++	if(SSL_IS_DTLS(s))return 1;
++	get_modify_address(modify);
++	if(!modify)return 1;
++	ptr=WPACKET_get_curr(pkt);
++	fill=pkt->written-pkt->subs->pwritten;
++	ptr-=fill;
++	memcpy(bfr,ptr,fill);
++	len=modify(bfr,fill,sizeof(bfr),NULL,0,0,5);
++	memcpy(ptr,bfr,len<0?fill-len:fill);
++	if(len<0)
++	{
++		pkt->curr+=len;
++		pkt->written+=len;
++	}
++	else while(len--)
++	{
++		val=bfr[fill++];
++		if(!WPACKET_put_bytes_u8(pkt,val))return 0;
++	}
++	return 1;
++}
+diff -rNup openssl-1.1.1g.orig/ssl/statem/extensions_clnt.c openssl-1.1.1g/ssl/statem/extensions_clnt.c
+--- openssl-1.1.1g.orig/ssl/statem/extensions_clnt.c	2020-04-21 14:22:39.000000000 +0200
++++ openssl-1.1.1g/ssl/statem/extensions_clnt.c	2020-08-04 13:11:01.779821970 +0200
+@@ -11,6 +11,7 @@
+ #include "../ssl_local.h"
+ #include "internal/cryptlib.h"
+ #include "statem_local.h"
++#include "../clienthello.h"
+ 
+ EXT_RETURN tls_construct_ctos_renegotiate(SSL *s, WPACKET *pkt,
+                                           unsigned int context, X509 *x,
+@@ -1168,6 +1169,13 @@ EXT_RETURN tls_construct_ctos_psk(SSL *s
+ 
+     msgstart = WPACKET_get_curr(pkt) - msglen;
+ 
++    if (!binder_packet_modify(pkt, msgstart, &msglen, &binderoffset,
++                              &resbinder, &pskbinder)) {
++        SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS_CONSTRUCT_CTOS_PSK,
++                 ERR_R_INTERNAL_ERROR);
++        return EXT_RETURN_FAIL;
++    }
++
+     if (dores
+             && tls_psk_do_binder(s, mdres, msgstart, binderoffset, NULL,
+                                  resbinder, s->session, 1, 0) != 1) {
+diff -rNup openssl-1.1.1g.orig/ssl/statem/statem.c openssl-1.1.1g/ssl/statem/statem.c
+--- openssl-1.1.1g.orig/ssl/statem/statem.c	2020-04-21 14:22:39.000000000 +0200
++++ openssl-1.1.1g/ssl/statem/statem.c	2020-08-04 13:11:01.779821970 +0200
+@@ -12,6 +12,7 @@
+ #include "../ssl_local.h"
+ #include "statem_local.h"
+ #include <assert.h>
++#include "../clienthello.h"
+ 
+ /*
+  * This file implements the SSL/TLS/DTLS state machines.
+@@ -853,6 +854,15 @@ static SUB_STATE_RETURN write_state_mach
+                 return SUB_STATE_ERROR;
+             }
+ 
++            if (mt == SSL3_MT_CLIENT_HELLO) {
++                if (!complete_packet_modify(s)) {
++                    SSLfatal(s, SSL_AD_INTERNAL_ERROR,
++                    SSL_F_WRITE_STATE_MACHINE,
++                    ERR_R_INTERNAL_ERROR);
++                    return SUB_STATE_ERROR;
++                }
++            }
++
+             /* Fall through */
+ 
+         case WRITE_STATE_SEND:
+diff -rNup openssl-1.1.1g.orig/ssl/statem/statem_clnt.c openssl-1.1.1g/ssl/statem/statem_clnt.c
+--- openssl-1.1.1g.orig/ssl/statem/statem_clnt.c	2020-04-21 14:22:39.000000000 +0200
++++ openssl-1.1.1g/ssl/statem/statem_clnt.c	2020-08-04 13:11:01.783155302 +0200
+@@ -23,6 +23,7 @@
+ #include <openssl/bn.h>
+ #include <openssl/engine.h>
+ #include <internal/cryptlib.h>
++#include "../clienthello.h"
+ 
+ static MSG_PROCESS_RETURN tls_process_as_hello_retry_request(SSL *s, PACKET *pkt);
+ static MSG_PROCESS_RETURN tls_process_encrypted_extensions(SSL *s, PACKET *pkt);
+@@ -1248,7 +1249,7 @@ int tls_construct_client_hello(SSL *s, W
+         /* SSLfatal() already called */
+         return 0;
+     }
+-    if (!WPACKET_close(pkt)) {
++    if (!cipher_packet_modify(s, pkt) || !WPACKET_close(pkt)) {
+         SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS_CONSTRUCT_CLIENT_HELLO,
+                  ERR_R_INTERNAL_ERROR);
+         return 0;
+@@ -1277,7 +1278,8 @@ int tls_construct_client_hello(SSL *s, W
+     }
+ #endif
+     /* Add the NULL method */
+-    if (!WPACKET_put_bytes_u8(pkt, 0) || !WPACKET_close(pkt)) {
++    if (!WPACKET_put_bytes_u8(pkt, 0) || !compmeth_packet_modify(s,pkt) || 
++            !WPACKET_close(pkt)) {
+         SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS_CONSTRUCT_CLIENT_HELLO,
+                  ERR_R_INTERNAL_ERROR);
+         return 0;

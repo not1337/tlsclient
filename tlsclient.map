@@ -1,0 +1,36 @@
+/*
+ * This file is part of the tlsclient project
+ *
+ * (C) 2020 Andreas Steinmetz, ast@domdv.de
+ * The contents of this file is licensed under the GPL version 2 or, at
+ * your choice, any later version of this license.
+ */
+
+V_1_0
+{
+	global:
+		tls_client_global_init;
+		tls_client_global_fini;
+		tls_client_init;
+		tls_client_emulation_init;
+		tls_client_fini;
+		tls_client_add_cafile;
+		tls_client_add_client_cert;
+		tls_client_set_alpn;
+		tls_client_load_hello_template;
+		tls_client_use_hello_template;
+		tls_client_connect;
+		tls_client_emulation_connect;
+		tls_client_disconnect;
+		tls_client_free_resume_data;
+		tls_client_get_alpn;
+		tls_client_get_tls_version;
+		tls_client_get_emulation_error;
+		tls_client_write;
+		tls_client_read;
+		tls_client_get_max_tls_version;
+		tls_client_set_max_tls_version;
+		tls_client_hello_modify;
+	local:
+		*;
+};
