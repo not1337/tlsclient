@@ -552,8 +552,8 @@ int diff_clienthello(CLIENTHELLO *left,CLIENTHELLO *right,int showgrease,
 	LIST *lll;
 	LIST *rrr;
 
-	dump_clienthello(left,showgrease,&l,1);
-	dump_clienthello(right,showgrease,&r,1);
+	dump_clienthello(left,showgrease,&l,loose);
+	dump_clienthello(right,showgrease,&r,loose);
 
 	if(!l||!r)goto fail;
 
