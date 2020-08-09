@@ -199,6 +199,25 @@ static const EMULATION opera_69=
 	{TEMPLATE(chromium_84_31),TEMPLATE(chromium_84_32)},
 };
 
+static const EMULATION opera_70=
+{
+	1,
+	TLS_CLIENT_EMU_CHROMIUM_84_LINUX,
+	TLS_CLIENT_EMU_NO_OPTION,
+	TLS_CLIENT_EMU_NO_CERT_BROTLI,
+	TLS_CLIENT_EMU_NO_OPTION,
+	-1,
+	{1,1,0,0,0,0,0,0,0},
+	{0,1,0,1,0,0,0,0,0},
+	{2,2,2,0,0,0,0,0,0},
+	{4,1,1,0,0,0,0,0,0},
+	{1,1,1,1,1,1,1,1,1},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_2)},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_31),TEMPLATE(chromium_84_32)},
+};
+
 static const EMULATION firefox_78=
 {
 	1,
@@ -331,6 +350,9 @@ void *tls_client_emulation_init(int emulation,int strict)
 		break;
 	case TLS_CLIENT_EMULATION_OPERA_69_LINUX:
 		emu=&opera_69;
+		break;
+	case TLS_CLIENT_EMULATION_OPERA_70_LINUX:
+		emu=&opera_70;
 		break;
 	case TLS_CLIENT_EMULATION_FIREFOX_78_LINUX:
 		emu=&firefox_78;

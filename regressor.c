@@ -68,6 +68,7 @@ typedef struct
 #include "regression/opera_59_android_10.h"
 #include "regression/opera_69_linux.h"
 #include "regression/vivaldi_3_1_android_10.h"
+#include "regression/opera_70_linux.h"
 
 #define BUFSIZE		65536
 
@@ -142,6 +143,8 @@ static const struct
 		TLS_CLIENT_EMULATION_OPERA_69_LINUX},
 	{&vivaldi_3_1_android_10,"Vivaldi 3.1.1935.19 Android 10",
 		TLS_CLIENT_EMULATION_VIVALDI_31_ANDROID_10},
+	{&opera_70_linux,"Opera 70.0.3728.95 Linux",
+		TLS_CLIENT_EMULATION_OPERA_70_LINUX},
 	{NULL,NULL,0},
 };
 

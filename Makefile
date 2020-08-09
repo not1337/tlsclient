@@ -112,7 +112,7 @@ RDEPS+=regression/chrome_84_android_10.h regression/chromium_84_linux.h
 RDEPS+=regression/firefox_68_android_10.h regression/firefox_78_linux.h
 RDEPS+=regression/kiwi_77_android_10.h regression/konqueror_5_0_linux.h
 RDEPS+=regression/opera_59_android_10.h regression/opera_69_linux.h
-RDEPS+=regression/vivaldi_3_1_android_10.h
+RDEPS+=regression/vivaldi_3_1_android_10.h regression/opera_70_linux.h
 endif
 endif
 endif
@@ -127,6 +127,7 @@ all: $(TARGETS)
 libtlsclient.so: $(LIBOBJS)
 	$(CC) $(LFLAGS) $(SOFLAGS) -shared -Wl,--version-script,tlsclient.map \
 		-o $@ $(LIBOBJS) $(LIBS)
+	ln -sf $@ $@.$(LIBVER)
 
 regressor: $(RGOBJS) libtlsclient.so
 	$(CC) $(LFLAGS) -o $@ $(RGOBJS) $(LIBRGR) -L. -ltlsclient -Wl,-rpath,. \
@@ -139,7 +140,8 @@ tester: tester.o libtlsclient.so
 	$(CC) $(LFLAGS) -o $@ $< $(LIBTST) -L. -ltlsclient -Wl,-rpath,.
 
 clean:
-	rm -f *.o *.lo *.hh libtlsclient.so tlshelloanalyzer tester regressor
+	rm -f *.o *.lo *.hh libtlsclient.so tlshelloanalyzer tester regressor \
+		libtlsclient.so.$(LIBVER)
 
 install: all
 	install -m 755 libtlsclient.so $(LIBDIR)/libtlsclient.so.$(LIBVER)

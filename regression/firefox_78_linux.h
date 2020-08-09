@@ -4,6 +4,7 @@
  * 2020 by Andreas Steinmetz, No License
  *
  * Firefox 78.0.2 Linux
+ * Firefox 79.0 Linux
  */
 
 static const SEQUENCE firefox_78_linux=
