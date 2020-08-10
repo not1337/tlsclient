@@ -4,6 +4,7 @@
  * 2020 by Andreas Steinmetz, No License
  *
  * Brave 1.10.97 Linux
+ * Brave 1.12.107 Linux
  */
 
 static const SEQUENCE brave_1_10_linux=
