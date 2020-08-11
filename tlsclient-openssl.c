@@ -524,7 +524,7 @@ static int ssl_client_set_alpn(void *context,int nproto,char **proto)
 	CLIENTCTX *ctx=context;
 
 	if(ctx->alpn)goto err1;
-	for(len=0,i=0;i<nproto;i++)if(!(l=strlen(proto[i]))||len>255)goto err1;
+	for(len=0,i=0;i<nproto;i++)if(!(l=strlen(proto[i]))||l>255)goto err1;
 	else len+=l+1;
 	if(!len)goto err1;
 	if(!(alpn=malloc(len)))goto err1;
@@ -599,7 +599,7 @@ static void *ssl_client_connect(void *context,int fd,int timeout,char *host,
 			if(poll(&p,1,timeout)<1)goto err3;
 			if((p.revents&POLLOUT)!=POLLOUT)goto err3;
 			break;
-		default: goto err3;
+		default:goto err3;
 		}
 		else goto err3;
 	}
