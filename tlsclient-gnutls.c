@@ -51,9 +51,6 @@ typedef struct
 	gnutls_datum_t data;
 } RESUME;
 
-/* ugly workaround for certificate checking */
-static __thread CONNCTX *vry;
-
 #ifndef NO_EMU
 
 static int gnu_pull_timeout_func(gnutls_transport_ptr_t ptr,unsigned int ms)
@@ -155,12 +152,9 @@ static ssize_t gnu_push_func(gnutls_transport_ptr_t ptr,const void *data,
 static int tls_verify(gnutls_session_t sess)
 {
 	unsigned int status;
-	CONNCTX *ctx=vry;
+	CONNCTX *ctx;
 
-	/* assert that we use the proper context and bail out immediately
-	   if not so - well, thread local storage should work, but who
-	   knows */
-	if(ctx->sess!=sess)return GNUTLS_E_INTERNAL_ERROR;
+	ctx=gnutls_session_get_ptr(sess);
 	if(gnutls_certificate_verify_peers3(ctx->sess,
 		ctx->vryhost?ctx->host:NULL,&status)<0)
 			return GNUTLS_E_CERTIFICATE_ERROR;
@@ -346,10 +340,7 @@ static void *gnu_client_connect(void *context,int fd,int timeout,char *host,
 		GNUTLS_VERIFY_IGNORE_UNKNOWN_CRIT_EXTENSIONS|
 		(cln->caflag?0:GNUTLS_VERIFY_DISABLE_CA_SIGN));
 	gnutls_session_set_verify_function(ctx->sess,tls_verify);
-	/* ugly: use thread local storage to pass required data to the
-	   gnutls_session_set_verify_function callback as there seems
-	   to be no other way */
-	vry=ctx;
+	gnutls_session_set_ptr(ctx->sess,ctx);
 	ctx->vryhost=verify;
 	ctx->caflag=cln->caflag;
 #ifndef NO_EMU
