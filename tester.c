@@ -745,7 +745,7 @@ int main(int argc,char *argv[])
 
 	if(!rs);
 #ifndef NO_EMU
-	else if(hlmode!=-1)
+	else if(hlemu!=-1)
 	{
 		r=1;
 		if(!emuconnect(argv[optind],port,cln,tmo,verifyhost,rs,NULL,
