@@ -82,6 +82,27 @@ target as possible before the emulation template can be put to use.
 If you don't want or need the emulation, you can build the library
 without it. Just set the proper option in the Makefile.
 
+Note that no OCSP processing takes place. First of all one can assume
+that a server providing an OCSP status response will provide a good
+response. Secondly, the library would have to be enhanced to do
+internal HTTP requests on its own to fetch OCSP responses if the
+actual server doesn't provide an OCSP status response or provides
+one not related to the certificate to be checked. Finally there's
+then the requirement of OCSP response cacheing. After all, this
+overcomplicates things enough to not to implement OCSP processing.
+
+A possible future extension may be to introduce functionality to
+return all server provided certificates and the OCSP status response,
+if any, to the user, as well as any OCSP related URLs from the
+server certificate. Furthermore support routines to do verification
+and to extract expiration dates would need to be provided. It would
+then be the user's job to fetch missing components from the provided
+URLs and to handle OCSP validation and cacheing. This needs thorough
+examination, though, as the library API should not be cluttered
+to become as unusable as the crypto libraries which it simplifies,
+especially as there will be a quite low percentage of users actually
+requiring this stuff.
+
 The resulting libtlsclient.so shared library as well as the
 required tlsclient.h header file are licensed LGPLv2.1+,
 the patches for OpenSSL and GnuTLS are licensed as the library
