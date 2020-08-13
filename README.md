@@ -82,6 +82,11 @@ target as possible before the emulation template can be put to use.
 If you don't want or need the emulation, you can build the library
 without it. Just set the proper option in the Makefile.
 
+The library does session resumption only if session tickets are used.
+The old resumption method based on session id is probably rarely used
+nowadays and as all security data are stored in one place can be
+considered a security risk.
+
 Note that no OCSP processing takes place. First of all one can assume
 that a server providing an OCSP status response will provide a good
 response. Secondly, the library would have to be enhanced to do
