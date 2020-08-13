@@ -41,6 +41,7 @@ typedef struct
 	int err;
 	int vryhost;
 	int caflag;
+	int tktflag;
 	gnutls_session_t sess;
 	char alpn[256];
 	char host[0];
@@ -148,6 +149,19 @@ static ssize_t gnu_push_func(gnutls_transport_ptr_t ptr,const void *data,
 }
 
 #endif
+
+static int hook(gnutls_session_t sess,unsigned int htype,unsigned when,
+	unsigned int incoming,const gnutls_datum_t *msg)
+{
+	CONNCTX *ctx;
+
+	if(htype!=GNUTLS_HANDSHAKE_NEW_SESSION_TICKET||when!=GNUTLS_HOOK_PRE||
+		!incoming)return 0;
+	ctx=gnutls_session_get_ptr(sess);
+	if(msg->size>=5&&memcmp(msg->data,"\x00\x00\x00\x00\x00",5))
+		ctx->tktflag=1;
+	return 0;
+}
 
 static int tls_verify(gnutls_session_t sess)
 {
@@ -304,10 +318,17 @@ static void *gnu_client_connect(void *context,int fd,int timeout,char *host,
 
 	if(!(ctx=malloc(sizeof(CONNCTX)+strlen(host)+1)))goto err1;
 	ctx->common=cln->common;
+	ctx->tktflag=0;
 	ctx->fd=fd;
 	ctx->err=0;
 	strcpy(ctx->host,host);
 	if(gnutls_init(&ctx->sess,GNUTLS_CLIENT)!=GNUTLS_E_SUCCESS)goto err2;
+	/* ugly workaround - if the server sends an empty session ticket
+	   extension for "no session ticket" which is perfectly valid
+	   gnutls happily marks this as "session ticket received", so
+	   we have to ckeck outselves */
+	gnutls_handshake_set_hook_function(ctx->sess,
+		GNUTLS_HANDSHAKE_NEW_SESSION_TICKET,GNUTLS_HOOK_PRE,hook);
 	if(gnutls_set_default_priority(ctx->sess)!=GNUTLS_E_SUCCESS)goto err3;
 	if(gnutls_set_default_priority_append(ctx->sess,cln->vers,&unused,0)!=
 		GNUTLS_E_SUCCESS)goto err3;
@@ -374,8 +395,8 @@ static void gnu_client_disconnect(void *context,void **resume)
 	if(resume)
 	{
 		*resume=NULL;
-		if(gnutls_session_get_flags(ctx->sess)&
-			GNUTLS_SFLAGS_SESSION_TICKET)
+		if((gnutls_session_get_flags(ctx->sess)&
+			GNUTLS_SFLAGS_SESSION_TICKET)&&ctx->tktflag)
 				if((r=malloc(sizeof(RESUME))))
 		{
 			if(!gnutls_session_get_data2(ctx->sess,&r->data))

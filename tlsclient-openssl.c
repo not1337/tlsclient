@@ -675,7 +675,7 @@ static void ssl_client_disconnect(void *context,void **resume)
 	{
 		*resume=NULL;
 		if((sess=SSL_get_session(ctx->ssl)))
-			if(SSL_SESSION_is_resumable(sess))
+			if(SSL_SESSION_has_ticket(sess))
 				if((len1=i2d_SSL_SESSION(sess,NULL)))
 					if((r=malloc(sizeof(RESUME)+len1)))
 		{
