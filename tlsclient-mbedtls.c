@@ -315,6 +315,7 @@ static void mbed_client_disconnect(void *context,void **resume)
 		*resume=NULL;
 		if((r=malloc(sizeof(RESUME))))
 		{
+			mbedtls_ssl_session_init(&r->sess);
 			if(mbedtls_ssl_get_session(&ctx->ssl,&r->sess))
 				goto fail;
 			else if(r->sess.ticket_len)*resume=r;
