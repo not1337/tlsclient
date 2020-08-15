@@ -19,6 +19,9 @@
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/net.h>
+#ifdef MBEDTLS_DETECT_RESUME
+#include <mbedtls/ssl_internal.h>
+#endif
 #include "tlsdispatch.h"
 #include "tlsclient.h"
 
@@ -38,6 +41,7 @@ typedef struct
 typedef struct
 {
 	COMMON *common;
+	int isresumed;
 	int fd;
 	int err;
 	time_t stamp;
@@ -194,6 +198,10 @@ static int mbed_client_add_cafile(void *context,char *fn)
 	return 0;
 }
 
+static void mbed_client_set_oscp_verification(void *context,int mode)
+{
+}
+
 static int mbed_client_add_client_cert(void *context,char *cert,char *key,
 	int (*tls_getpass)(char *bfr,int size,char *prompt),char *prompt)
 {
@@ -262,6 +270,7 @@ static void *mbed_client_connect(void *context,int fd,int timeout,char *host,
 	p.fd=fd;
 	if(!(ctx=malloc(sizeof(CONNCTX))))goto err1;
 	ctx->common=cln->common;
+	ctx->isresumed=0;
 	ctx->fd=fd;
 	ctx->err=0;
 	mbedtls_ssl_init(&ctx->ssl);
@@ -276,28 +285,43 @@ static void *mbed_client_connect(void *context,int fd,int timeout,char *host,
 		if(mbedtls_ssl_session_reset(&ctx->ssl))goto err2;
 		if(mbedtls_ssl_set_session(&ctx->ssl,&rs->sess))goto err2;
 	}
-	while((r=mbedtls_ssl_handshake(&ctx->ssl)))switch(r)
+	while((r=mbedtls_ssl_handshake(&ctx->ssl)))
 	{
-	case MBEDTLS_ERR_SSL_WANT_READ:
-		p.events=POLLIN;
-		if(poll(&p,1,timeout)<1)goto err2;
-		if((p.revents&POLLIN)!=POLLIN)goto err2;
-		break;
-	case MBEDTLS_ERR_SSL_WANT_WRITE:
-		p.events=POLLOUT;
-		if(poll(&p,1,timeout)<1)goto err2;
-		if((p.revents&POLLOUT)!=POLLOUT)goto err2;
-		break;
-	default:goto err2;
+#ifdef MBEDTLS_DETECT_RESUME
+		if(ctx->ssl.handshake)if(ctx->ssl.handshake->resume)
+			ctx->isresumed=1;
+#endif
+		switch(r)
+		{
+		case MBEDTLS_ERR_SSL_WANT_READ:
+			p.events=POLLIN;
+			if(poll(&p,1,timeout)<1)goto err2;
+			if((p.revents&POLLIN)!=POLLIN)goto err2;
+			break;
+		case MBEDTLS_ERR_SSL_WANT_WRITE:
+			p.events=POLLOUT;
+			if(poll(&p,1,timeout)<1)goto err2;
+			if((p.revents&POLLOUT)!=POLLOUT)goto err2;
+			break;
+		default:goto err2;
+		}
 	}
-	status=mbedtls_ssl_get_verify_result(&ctx->ssl);
-	if(status&(MBEDTLS_X509_BADCERT_EXPIRED|MBEDTLS_X509_BADCERT_REVOKED|
-		MBEDTLS_X509_BADCERT_MISSING|MBEDTLS_X509_BADCERT_SKIP_VERIFY|
-		MBEDTLS_X509_BADCERT_OTHER|MBEDTLS_X509_BADCERT_FUTURE|
-		MBEDTLS_X509_BADCERT_BAD_MD|MBEDTLS_X509_BADCERT_BAD_PK|
-		MBEDTLS_X509_BADCERT_BAD_KEY))goto err2;
-	if(verify&&(status&MBEDTLS_X509_BADCERT_CN_MISMATCH))goto err3;
-	if(cln->caflag&&(status&MBEDTLS_X509_BADCERT_NOT_TRUSTED))goto err3;
+	if(!ctx->isresumed)
+	{
+		status=mbedtls_ssl_get_verify_result(&ctx->ssl);
+		if(status&(MBEDTLS_X509_BADCERT_EXPIRED|
+			MBEDTLS_X509_BADCERT_REVOKED|
+			MBEDTLS_X509_BADCERT_MISSING|
+			MBEDTLS_X509_BADCERT_SKIP_VERIFY|
+			MBEDTLS_X509_BADCERT_OTHER|
+			MBEDTLS_X509_BADCERT_FUTURE|
+			MBEDTLS_X509_BADCERT_BAD_MD|
+			MBEDTLS_X509_BADCERT_BAD_PK|
+			MBEDTLS_X509_BADCERT_BAD_KEY))goto err2;
+		if(verify&&(status&MBEDTLS_X509_BADCERT_CN_MISMATCH))goto err3;
+		if(cln->caflag&&(status&MBEDTLS_X509_BADCERT_NOT_TRUSTED))
+			goto err3;
+	}
 	if(clock_gettime(CLOCK_MONOTONIC,&now))goto err3;
 	ctx->stamp=now.tv_sec;
 	return ctx;
@@ -338,6 +362,13 @@ fail:				mbedtls_ssl_session_free(&r->sess);
 	shutdown(ctx->fd,SHUT_RDWR);
 	close(ctx->fd);
 	free(ctx);
+}
+
+static int mbed_client_connection_is_resumed(void *context)
+{
+	CONNCTX *ctx=context;
+
+	return ctx->isresumed;
 }
 
 static int mbed_client_resume_data_lifetime_hint(void *resume)
@@ -495,10 +526,12 @@ WRAPPER mbedtls=
 	mbed_client_init,
 	mbed_client_fini,
 	mbed_client_add_cafile,
+	mbed_client_set_oscp_verification,
 	mbed_client_add_client_cert,
 	mbed_client_set_alpn,
 	mbed_client_connect,
 	mbed_client_disconnect,
+	mbed_client_connection_is_resumed,
 	mbed_client_resume_data_lifetime_hint,
 	mbed_client_free_resume_data,
 	mbed_client_get_alpn,

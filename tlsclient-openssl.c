@@ -18,6 +18,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #include <openssl/rand.h>
+#include <openssl/ocsp.h>
 #include "tlsdispatch.h"
 #include "tlsclient.h"
 
@@ -28,6 +29,7 @@ typedef struct
 	COMMON *common;
 	COMMON cmn;
 	int caflag;
+	int noocsp;
 	int (*tls_getpass)(char *bfr,int size,char *prompt);
 	char *prompt;
 	unsigned char *alpn;
@@ -306,6 +308,89 @@ static int getrandom(unsigned char *buf,int num)
 	return read(rngfd,buf,num);
 }
 
+static int ocsp_cb(SSL *s,void *arg)
+{
+	int i;
+	int reason;
+	long l;
+	const unsigned char *rsp;
+	OCSP_RESPONSE *resp;
+	OCSP_BASICRESP *basic;
+	STACK_OF(X509) *chain;
+	X509_STORE *store;
+	X509 *x;
+	STACK_OF(OPENSSL_STRING) *ulist;
+	CLIENTCTX *ctx=arg;
+	OCSP_SINGLERESP *single;
+	ASN1_GENERALIZEDTIME *revtime;
+	ASN1_GENERALIZEDTIME *thisupd;
+	ASN1_GENERALIZEDTIME *nextupd;
+
+	if(SSL_session_reused(s)||!ctx->caflag||ctx->noocsp)return 1;
+
+	if((l=SSL_get_tlsext_status_ocsp_resp(s,&rsp))==-1)
+	{
+		if(!rsp)
+		{
+			/* note, X509_get1_ocsp and X509_email_free are
+			   exported but not documented, sigh */
+			if(!(x=SSL_get_peer_certificate(s)))goto skip1;
+			if(!(ulist=X509_get1_ocsp(x)))goto skip1;
+			if(!sk_OPENSSL_STRING_num(ulist))goto skip2;
+			/* FIXME: the following function returns the string
+			   pointer to the OCSP URL, do stuff here */
+			sk_OPENSSL_STRING_value(ulist,0);
+			goto skip2;
+		}
+		else goto err1;
+	}
+	if(!(resp=d2i_OCSP_RESPONSE(NULL,&rsp,l)))goto err1;
+
+	if(OCSP_response_status(resp)!=OCSP_RESPONSE_STATUS_SUCCESSFUL)
+		goto bad2;
+
+	if(!(basic=OCSP_response_get1_basic(resp)))goto err2;
+	if(!(chain=SSL_get_peer_cert_chain(s)))goto err3;
+	if(!(store=SSL_CTX_get_cert_store(ctx->ctx)))goto err3;
+
+	switch(OCSP_basic_verify(basic,chain,store,0))
+	{
+	case 0:	goto bad3;
+	case -1:goto err3;
+	}
+
+	for(i=0;i<OCSP_resp_count(basic);i++)
+	{
+		if(!(single=OCSP_resp_get0(basic,i)))continue;
+
+		switch(OCSP_single_get0_status(single,&reason,&revtime,
+			&thisupd,&nextupd))
+		{
+		case V_OCSP_CERTSTATUS_GOOD:
+			break;
+		default:goto bad3;
+		case -1:goto err3;
+		}
+
+		if(!OCSP_check_validity(thisupd,nextupd,0,-1))goto bad3;
+	}
+
+	OCSP_BASICRESP_free(basic);
+	OCSP_RESPONSE_free(resp);
+	return 1;
+
+err3:	OCSP_BASICRESP_free(basic);
+err2:	OCSP_RESPONSE_free(resp);
+err1:	return -1;
+
+bad3:	OCSP_BASICRESP_free(basic);
+bad2:	OCSP_RESPONSE_free(resp);
+	return 0;
+
+skip2:	X509_email_free(ulist);
+skip1:	return 1;
+}
+
 static int new_session_cb(SSL *s,SSL_SESSION *sess)
 {
 	CONNCTX *ctx;
@@ -376,6 +461,7 @@ static void *ssl_client_init(int tls_version,int emu)
 	if(!(ctx=malloc(sizeof(CLIENTCTX))))goto err1;
 	ctx->common=&ctx->cmn;
 	ctx->caflag=0;
+	ctx->noocsp=0;
 	ctx->alpn=NULL;
 	if(!(ctx->ctx=SSL_CTX_new(TLS_client_method())))goto err2;
 	switch(tls_version)
@@ -397,6 +483,8 @@ static void *ssl_client_init(int tls_version,int emu)
 	if(!SSL_CTX_set_max_proto_version(ctx->ctx,TLS1_3_VERSION))goto err3;
 	if(!SSL_CTX_set_tlsext_status_type(ctx->ctx,TLSEXT_STATUSTYPE_ocsp))
 		goto err3;
+	if(!SSL_CTX_set_tlsext_status_cb(ctx->ctx,ocsp_cb))goto err3;
+	if(!SSL_CTX_set_tlsext_status_arg(ctx->ctx,ctx))goto err3;
 	SSL_CTX_set_verify(ctx->ctx,SSL_VERIFY_NONE,NULL);
 	SSL_CTX_set_verify_depth(ctx->ctx,4);
 	SSL_CTX_set_options(ctx->ctx,SSL_OP_ALL);
@@ -509,6 +597,13 @@ static int ssl_client_add_cafile(void *context,char *fn)
 	if(!SSL_CTX_load_verify_locations(ctx->ctx,fn,NULL))return -1;
 	ctx->caflag=1;
 	return 0;
+}
+
+static void ssl_client_set_oscp_verification(void *context,int mode)
+{
+	CLIENTCTX *ctx=context;
+
+	ctx->noocsp=mode;
 }
 
 static int ssl_client_add_client_cert(void *context,char *cert,char *key,
@@ -629,6 +724,8 @@ static void *ssl_client_connect(void *context,int fd,int timeout,char *host,
 		else goto err3;
 	}
 
+	if(SSL_session_reused(ctx->ssl))return ctx;
+
 	if(!(x509=SSL_get_peer_certificate(ctx->ssl)))goto err4;
 
 	status=SSL_get_verify_result(ctx->ssl);
@@ -722,6 +819,13 @@ static void ssl_client_disconnect(void *context,void **resume)
 	shutdown(ctx->fd,SHUT_RDWR);
 	close(ctx->fd);
 	free(ctx);
+}
+
+static int ssl_client_connection_is_resumed(void *context)
+{
+	CONNCTX *ctx=context;
+
+	return SSL_session_reused(ctx->ssl)?1:0;
 }
 
 static int ssl_client_resume_data_lifetime_hint(void *resume)
@@ -862,10 +966,12 @@ WRAPPER openssl=
 	ssl_client_init,
 	ssl_client_fini,
 	ssl_client_add_cafile,
+	ssl_client_set_oscp_verification,
 	ssl_client_add_client_cert,
 	ssl_client_set_alpn,
 	ssl_client_connect,
 	ssl_client_disconnect,
+	ssl_client_connection_is_resumed,
 	ssl_client_resume_data_lifetime_hint,
 	ssl_client_free_resume_data,
 	ssl_client_get_alpn,

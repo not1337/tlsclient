@@ -15,6 +15,7 @@ V_1_0
 		tls_client_emulation_init;
 		tls_client_fini;
 		tls_client_add_cafile;
+		tls_client_set_oscp_verification;
 		tls_client_add_client_cert;
 		tls_client_set_alpn;
 		tls_client_load_hello_template;
@@ -22,6 +23,7 @@ V_1_0
 		tls_client_connect;
 		tls_client_emulation_connect;
 		tls_client_disconnect;
+		tls_client_connection_is_resumed;
 		tls_client_resume_data_lifetime_hint;
 		tls_client_free_resume_data;
 		tls_client_get_alpn;

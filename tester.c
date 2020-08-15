@@ -437,8 +437,9 @@ static int emuconnect(char *host,int port,void *cln,int tmo,int verify,
 
 	if(!proto)proto="http/1.1";
 
-	printf("Connection established using %s and protocol %s.\n",
-		connection_protocol(con),proto);
+	printf("Connection established using %s and protocol %s.\n"
+		"Connection is %s.\n",connection_protocol(con),proto,
+		tls_client_connection_is_resumed(con)?"resumed":"new");
 	if(dohttp)
 	{
 		if(!strcmp(proto,"http/1.1"))printf("%s request %s.\n",proto,
@@ -496,8 +497,9 @@ static int tlsconnect(char *host,int port,void *cln,int tmo,int verify,int emu,
 
 	if(!(proto=tls_client_get_alpn(con)))proto="http/1.1";
 
-	printf("Connection established using %s and protocol %s.\n",
-		connection_protocol(con),proto);
+	printf("Connection established using %s and protocol %s.\n"
+		"Connection is %s.\n",connection_protocol(con),proto,
+		tls_client_connection_is_resumed(con)?"resumed":"new");
 	if(dohttp)
 	{
 		if(!strcmp(proto,"http/1.1"))printf("%s request %s.\n",proto,

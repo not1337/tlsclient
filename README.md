@@ -30,10 +30,24 @@ or use client certificates. Related functions are:
 If you need to you can use session resumption by storing
 session resume data during tls\_client\_disconnect() and reusing
 them in a later tls\_client\_connect(). To get hinting about
-resume data lifetime and to free the stored resume data use:
-
+resumption, resume data lifetime and to free the stored resume data use:
+i
+* tls\_client\_connection\_is\_resumed
 * tls\_client\_resume\_data\_lifetime\_hint
 * tls\_client\_free\_resume\_data
+
+Currently only server provided OCSP checking takes place with the
+exception of the mbedTLS backend for which provides no OCSP functionality.
+A future release may include the capability of fetching the OCSP
+data from the server specified in the server certificate
+by means of a callback which needs to provide an established
+TCP connection.
+Note that OCSP verification is implicitely disabled when there
+are no CA certificates configured, this is a basic requirement
+for OCSP verification to work.
+If you want to disable OCSP verification for whatever reason use:
+
+* tls\_client\_set\_oscp\_verification
 
 As a special feature the library can use patched versions of
 OpenSSL and GnuTLS to emulate the TLS Client Hello messages
@@ -87,27 +101,6 @@ The library does session resumption only if session tickets are used.
 The old resumption method based on session id is probably rarely used
 nowadays and as all security data are stored in one place can be
 considered a security risk.
-
-Note that no OCSP processing takes place. First of all one can assume
-that a server providing an OCSP status response will provide a good
-response. Secondly, the library would have to be enhanced to do
-internal HTTP requests on its own to fetch OCSP responses if the
-actual server doesn't provide an OCSP status response or provides
-one not related to the certificate to be checked. Finally there's
-then the requirement of OCSP response cacheing. After all, this
-overcomplicates things enough to not to implement OCSP processing.
-
-A possible future extension may be to introduce functionality to
-return all server provided certificates and the OCSP status response,
-if any, to the user, as well as any OCSP related URLs from the
-server certificate. Furthermore support routines to do verification
-and to extract expiration dates would need to be provided. It would
-then be the user's job to fetch missing components from the provided
-URLs and to handle OCSP validation and cacheing. This needs thorough
-examination, though, as the library API should not be cluttered
-to become as unusable as the crypto libraries which it simplifies,
-especially as there will be a quite low percentage of users actually
-requiring this stuff.
 
 The resulting libtlsclient.so shared library as well as the
 required tlsclient.h header file are licensed LGPLv2.1+,

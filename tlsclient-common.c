@@ -128,6 +128,13 @@ int tls_client_add_cafile(void *context,char *fn)
 	return lib[cmn->libid]->tls_client_add_cafile(context,fn);
 }
 
+void tls_client_set_oscp_verification(void *context,int mode)
+{
+	COMMON *cmn=*((COMMON **)context);
+
+	lib[cmn->libid]->tls_client_set_oscp_verification(context,mode);
+}
+
 int tls_client_add_client_cert(void *context,char *cert,char *key,
 	int (*tls_getpass)(char *bfr,int size,char *prompt),char *prompt)
 {
@@ -207,6 +214,13 @@ void tls_client_disconnect(void *context,void **resume)
 	COMMON *cmn=*((COMMON **)context);
 
 	lib[cmn->libid]->tls_client_disconnect(context,resume);
+}
+
+int tls_client_connection_is_resumed(void *context)
+{
+	COMMON *cmn=*((COMMON **)context);
+
+	return lib[cmn->libid]->tls_client_connection_is_resumed(context);
 }
 
 int tls_client_resume_data_lifetime_hint(void *context,void *resume)

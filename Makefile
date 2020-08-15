@@ -16,6 +16,10 @@ OPENSSL=1
 #
 MBEDTLS=1
 #
+# enable to be able to detect session resumption for mbedTLS,
+# this BREAKS BINARY COMPATABILITY for mbedTLS!!!!
+#MBEDTLS_DETECT_RESUME=1
+#
 # GnuTLS 3.5 or later
 #
 GNUTLS=1
@@ -69,6 +73,9 @@ SSLWRAP=1
 CFLAGS+=-DUSE_MBEDTLS
 LIBS+=-lmbedtls -lmbedx509 -lmbedcrypto
 LIBOBJS+=tlsclient-mbedtls.lo
+ifdef MBEDTLS_DETECT_RESUME
+CFLAGS+=-DMBEDTLS_DETECT_RESUME
+endif
 endif
 ifdef GNUTLS
 SSLWRAP=1

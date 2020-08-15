@@ -30,6 +30,13 @@
 #define TLS_CLIENT_TLS_1_3			0x00030000
 
 /*
+ * operation mode of OSCP verification (default on)
+ */
+
+#define TLS_CLIENT_OCSP_VERIFICATION_ON		0
+#define TLS_CLIENT_OCSP_VERIFICATION_OFF	1
+
+/*
  * emulation selection, high level interface
  */
 
@@ -192,6 +199,12 @@ extern int tls_client_set_max_tls_version(void *context,int version);
 extern int tls_client_add_cafile(void *context,char *fn);
 
 /*
+ * enable or disable OSCP verification
+ */
+
+extern void tls_client_set_oscp_verification(void *context,int mode);
+
+/*
  * tls_client_add_client_cert
  *
  * add a client certificate and a client key (both files in PEM format)
@@ -240,6 +253,23 @@ extern int tls_client_load_hello_template(void *context,int group,char *fn);
  */
 
 extern int tls_client_use_hello_template(void *context,int group,int option);
+
+/*
+ * returns 1 if the current connection is a resumed connection and 0
+ * if it is a new connection
+ *
+ * WARNING: for mbedTLS this function needs to access internal
+ * structures as there is no API to get information about session
+ * resumption, so there is NO binary compatability between
+ * mbedTLS versions or the same mbedTLS version compiled with
+ * different options. Thus one has to explicitely enable this
+ * functionality for mbedTLS in the Makefile when compiling the
+ * tlsclient library. If not enabled binary compatability for
+ * mbedTLS is restored but this function will always return
+ * zero for the mbedTLS backend.
+ */
+
+extern int tls_client_connection_is_resumed(void *context);
 
 /*
  * returns advisory and estimated remaining resumption data lifetime

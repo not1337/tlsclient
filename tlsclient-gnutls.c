@@ -18,6 +18,7 @@
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
 #include <gnutls/crypto.h>
+#include <gnutls/ocsp.h>
 #include "tlsdispatch.h"
 #include "tlsclient.h"
 
@@ -26,10 +27,12 @@ typedef struct
 	COMMON *common;
 	COMMON cmn;
 	int caflag;
+	int noocsp;
 	int nalpn;
 	int sid;
 	char *vers;
 	gnutls_certificate_credentials_t cred;
+	gnutls_x509_trust_list_t tl;
 	gnutls_datum_t *alpn;
 	unsigned char id[32];
 } CLIENTCTX;
@@ -41,10 +44,12 @@ typedef struct
 	int err;
 	int vryhost;
 	int caflag;
+	int noocsp;
 	int tktflag;
 	int hint;
 	time_t stamp;
 	gnutls_session_t sess;
+	gnutls_x509_trust_list_t tl;
 	char alpn[256];
 	char host[0];
 } CONNCTX;
@@ -195,6 +200,61 @@ static int tls_verify(gnutls_session_t sess)
 	return GNUTLS_E_CERTIFICATE_VERIFICATION_ERROR;
 }
 
+static int ocsp_verify(gnutls_session_t sess)
+{
+	unsigned int vry;
+	unsigned int status;
+	unsigned int reason;
+	unsigned int size;
+	time_t this;
+	time_t next;
+	time_t curr;
+	gnutls_ocsp_resp_t resp;
+	gnutls_datum_t datum;
+	gnutls_x509_crt_t cert;
+	const gnutls_datum_t *list;
+	CONNCTX *ctx;
+
+	ctx=gnutls_session_get_ptr(sess);
+	if(!ctx->tl||ctx->noocsp)goto skip1;
+	if(!gnutls_ocsp_status_request_is_checked(sess,GNUTLS_OCSP_SR_IS_AVAIL))
+	{
+		if(!(list=gnutls_certificate_get_peers(sess,&size)))goto skip1;
+		if(gnutls_x509_crt_init(&cert))goto skip1;
+		if(gnutls_x509_crt_import(cert,list,GNUTLS_X509_FMT_DER))
+			goto skip2;
+		if(gnutls_x509_crt_get_authority_info_access(cert,0,
+			GNUTLS_IA_OCSP_URI,&datum,NULL))goto skip2;
+		/* FIXME: datum points to the OCSP request URI,
+		   handle request stuff here */
+		goto skip2;
+	}
+	if(!gnutls_ocsp_status_request_is_checked(sess,0))goto err1;
+	if(gnutls_ocsp_status_request_get(sess,&datum))goto err1;
+	if(gnutls_ocsp_resp_init(&resp))goto err1;
+	if(gnutls_ocsp_resp_import(resp,&datum))goto err2;
+	if(gnutls_ocsp_resp_verify(resp,ctx->tl,&vry,
+		GNUTLS_VERIFY_DO_NOT_ALLOW_WILDCARDS|
+		GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES|
+		GNUTLS_VERIFY_IGNORE_UNKNOWN_CRIT_EXTENSIONS))goto err2;
+	/* not nice but what shall we do, fail every connection because
+	   the OCSP signer is not in the system's default CA file? */
+	if(vry&&vry!=GNUTLS_OCSP_VERIFY_UNTRUSTED_SIGNER)goto err2;
+	if(gnutls_ocsp_resp_get_single(resp,0,NULL,NULL,NULL,NULL,&status,
+		&this,&next,NULL,&reason))goto err2;
+	if(status!=GNUTLS_OCSP_CERT_GOOD)goto err2;
+	curr=time(NULL);
+	if(curr<this||curr>=next)goto err2;
+	gnutls_ocsp_resp_deinit(resp);
+	return 1;
+
+err2:	gnutls_ocsp_resp_deinit(resp);
+err1:	return -1;
+
+skip2:	gnutls_x509_crt_deinit(cert);
+skip1:	return 0;
+}
+
 static int gnu_client_global_init(void)
 {
 	return 0;
@@ -232,9 +292,10 @@ static void *gnu_client_init(int tls_version,int emu)
 	}
 	if(gnutls_certificate_allocate_credentials(&ctx->cred)!=
 		GNUTLS_E_SUCCESS)goto err2;
+	if(gnutls_x509_trust_list_init(&ctx->tl,0)!=GNUTLS_E_SUCCESS)goto err3;
 	switch(emu)
 	{
-	case 0:	if(!(ctx->vers=strdup(vers)))goto err2;
+	case 0:	if(!(ctx->vers=strdup(vers)))goto err3;
 		return ctx;
 
 #ifndef NO_EMU
@@ -242,11 +303,12 @@ static void *gnu_client_init(int tls_version,int emu)
 		vers="-VERS-TLS-ALL:+VERS-TLS1.0:+VERS-TLS1.1:+VERS-TLS1.2"
 			":+VERS-TLS1.3:+3DES-CBC:%DUMBFW:%DISABLE_WILDCARDS";
 		if(gnutls_rnd(GNUTLS_RND_NONCE,ctx->id,32))break;
-		if(!(ctx->vers=strdup(vers)))goto err2;
+		if(!(ctx->vers=strdup(vers)))goto err3;
 		return ctx;
 #endif
 	}
 
+err3:	gnutls_certificate_free_credentials(ctx->cred);
 err2:	free(ctx);
 err1:	return NULL;
 }
@@ -255,6 +317,7 @@ static void gnu_client_fini(void *context)
 {
 	CLIENTCTX *ctx=context;
 
+	gnutls_x509_trust_list_deinit(ctx->tl,1);
 	gnutls_certificate_free_credentials(ctx->cred);
 	if(ctx->alpn)free(ctx->alpn);
 	free(ctx->vers);
@@ -267,8 +330,17 @@ static int gnu_client_add_cafile(void *context,char *fn)
 
 	if(gnutls_certificate_set_x509_trust_file(ctx->cred,fn,
 		GNUTLS_X509_FMT_PEM)<=0)return -1;
+	if(gnutls_x509_trust_list_add_trust_file(ctx->tl,fn,NULL,
+		GNUTLS_X509_FMT_PEM,GNUTLS_TL_NO_DUPLICATES,0)<=0)return -1;
 	ctx->caflag=1;
 	return 0;
+}
+
+static void gnu_client_set_oscp_verification(void *context,int mode)
+{
+	CLIENTCTX *ctx=context;
+
+	ctx->noocsp=mode;
 }
 
 static int gnu_client_add_client_cert(void *context,char *cert,char *key,
@@ -334,9 +406,12 @@ static void *gnu_client_connect(void *context,int fd,int timeout,char *host,
 
 	if(!(ctx=malloc(sizeof(CONNCTX)+strlen(host)+1)))goto err1;
 	ctx->common=cln->common;
+	ctx->noocsp=cln->noocsp;
 	ctx->tktflag=0;
 	ctx->fd=fd;
 	ctx->err=0;
+	if(cln->caflag)ctx->tl=cln->tl;
+	else ctx->tl=NULL;
 	strcpy(ctx->host,host);
 	if(gnutls_init(&ctx->sess,GNUTLS_CLIENT)!=GNUTLS_E_SUCCESS)goto err2;
 	/* ugly workaround - if the server sends an empty session ticket
@@ -370,7 +445,7 @@ static void *gnu_client_connect(void *context,int fd,int timeout,char *host,
 	   gnutls_session_set_verify_function - the purpose is to handle
 	   the case when the caller on purposes did not provide any CA */
 	gnutls_session_set_verify_cert(ctx->sess,NULL,
-		GNUTLS_VERIFY_DISABLE_CRL_CHECKS|
+		(cln->caflag?0:GNUTLS_VERIFY_DISABLE_CRL_CHECKS)|
 		GNUTLS_VERIFY_DO_NOT_ALLOW_WILDCARDS|
 		GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES|
 		GNUTLS_VERIFY_ALLOW_SIGN_WITH_SHA1|
@@ -394,6 +469,11 @@ static void *gnu_client_connect(void *context,int fd,int timeout,char *host,
 	while((r=gnutls_handshake(ctx->sess))<0)
 		if(gnutls_error_is_fatal(r))break;
 	if(r<0)goto err3;
+	if(!gnutls_session_is_resumed(ctx->sess))switch(ocsp_verify(ctx->sess))
+	{
+	case 0:	break;
+	case -1:goto err3;
+	}
 	return ctx;
 
 err3:	gnutls_deinit(ctx->sess);
@@ -430,6 +510,13 @@ static void gnu_client_disconnect(void *context,void **resume)
 	shutdown(ctx->fd,SHUT_RDWR);
 	close(ctx->fd);
 	free(ctx);
+}
+
+static int gnu_client_connection_is_resumed(void *context)
+{
+	CONNCTX *ctx=context;
+
+	return gnutls_session_is_resumed(ctx->sess)?1:0;
 }
 
 static int gnu_client_resume_data_lifetime_hint(void *resume)
@@ -603,10 +690,12 @@ WRAPPER gnutls=
 	gnu_client_init,
 	gnu_client_fini,
 	gnu_client_add_cafile,
+	gnu_client_set_oscp_verification,
 	gnu_client_add_client_cert,
 	gnu_client_set_alpn,
 	gnu_client_connect,
 	gnu_client_disconnect,
+	gnu_client_connection_is_resumed,
 	gnu_client_resume_data_lifetime_hint,
 	gnu_client_free_resume_data,
 	gnu_client_get_alpn,
