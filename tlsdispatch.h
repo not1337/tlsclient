@@ -51,6 +51,7 @@ typedef struct
 	void *(*tls_client_init)(int tls_version,int emu);
 	void (*tls_client_fini)(void *context);
 	int (*tls_client_add_cafile)(void *context,char *fn);
+	void (*tls_client_set_oscp_verification)(void *context,int mode);
 	int (*tls_client_add_client_cert)(void *context,char *cert,char *key,
 		int (*tls_getpass)(char *bfr,int size,char *prompt),
 		char *prompt);
@@ -58,6 +59,7 @@ typedef struct
 	void *(*tls_client_connect)(void *context,int fd,int timeout,char *host,
 		int verify,void *resume);
 	void (*tls_client_disconnect)(void *context,void **resume);
+	int (*tls_client_connection_is_resumed)(void *context);
 	int (*tls_client_resume_data_lifetime_hint)(void *resume);
 	void (*tls_client_free_resume_data)(void *resume);
 	char *(*tls_client_get_alpn)(void *context);
