@@ -18,6 +18,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #include <openssl/rand.h>
+#include <openssl/err.h>
 #include <openssl/ocsp.h>
 #include "tlsdispatch.h"
 #include "tlsclient.h"
@@ -326,6 +327,8 @@ static int ocsp_cb(SSL *s,void *arg)
 	ASN1_GENERALIZEDTIME *thisupd;
 	ASN1_GENERALIZEDTIME *nextupd;
 
+	ERR_clear_error();
+
 	if(SSL_session_reused(s)||!ctx->caflag||ctx->noocsp)return 1;
 
 	if((l=SSL_get_tlsext_status_ocsp_resp(s,&rsp))==-1)
@@ -396,6 +399,8 @@ static int new_session_cb(SSL *s,SSL_SESSION *sess)
 	CONNCTX *ctx;
 	struct timespec now;
 
+	ERR_clear_error();
+
 	if(!(ctx=SSL_get_ex_data(s,conidx)))return 0;
 	if(!SSL_SESSION_has_ticket(sess))return 0;
 	if(clock_gettime(CLOCK_MONOTONIC,&now))return 0;
@@ -457,6 +462,8 @@ static void ssl_client_global_fini(void)
 static void *ssl_client_init(int tls_version,int emu)
 {
 	CLIENTCTX *ctx;
+
+	ERR_clear_error();
 
 	if(!(ctx=malloc(sizeof(CLIENTCTX))))goto err1;
 	ctx->common=&ctx->cmn;
@@ -585,6 +592,8 @@ static void ssl_client_fini(void *context)
 {
 	CLIENTCTX *ctx=context;
 
+	ERR_clear_error();
+
 	SSL_CTX_free(ctx->ctx);
 	if(ctx->alpn)free(ctx->alpn);
 	free(ctx);
@@ -593,6 +602,8 @@ static void ssl_client_fini(void *context)
 static int ssl_client_add_cafile(void *context,char *fn)
 {
 	CLIENTCTX *ctx=context;
+
+	ERR_clear_error();
 
 	if(!SSL_CTX_load_verify_locations(ctx->ctx,fn,NULL))return -1;
 	ctx->caflag=1;
@@ -613,6 +624,8 @@ static int ssl_client_add_client_cert(void *context,char *cert,char *key,
 	CLIENTCTX *ctx=context;
 	pem_password_cb *pcb;
 	void *u;
+
+	ERR_clear_error();
 
 	pcb=SSL_CTX_get_default_passwd_cb(ctx->ctx);
 	u=SSL_CTX_get_default_passwd_cb_userdata(ctx->ctx);
@@ -639,6 +652,8 @@ static int ssl_client_set_alpn(void *context,int nproto,char **proto)
 	unsigned char *alpn;
 	unsigned char *ptr;
 	CLIENTCTX *ctx=context;
+
+	ERR_clear_error();
 
 	if(ctx->alpn)goto err1;
 	for(len=0,i=0;i<nproto;i++)if(!(l=strlen(proto[i]))||l>255)goto err1;
@@ -672,6 +687,8 @@ static void *ssl_client_connect(void *context,int fd,int timeout,char *host,
 #endif
 	SSL_SESSION *sess;
 	struct pollfd p;
+
+	ERR_clear_error();
 
 	p.fd=fd;
 	if(!(ctx=malloc(sizeof(CONNCTX))))goto err1;
@@ -793,6 +810,8 @@ static void ssl_client_disconnect(void *context,void **resume)
 	int len1;
 	int len2;
 
+	ERR_clear_error();
+
 	if(resume)
 	{
 		*resume=NULL;
@@ -825,6 +844,8 @@ static int ssl_client_connection_is_resumed(void *context)
 {
 	CONNCTX *ctx=context;
 
+	ERR_clear_error();
+
 	return SSL_session_reused(ctx->ssl)?1:0;
 }
 
@@ -852,6 +873,8 @@ static char *ssl_client_get_alpn(void *context)
 	CONNCTX *ctx=context;
 	const unsigned char *data;
 
+	ERR_clear_error();
+
 	SSL_get0_alpn_selected(ctx->ssl,&data,&len);
 	if(!data)return NULL;
 	memcpy(ctx->alpn,data,len);
@@ -862,6 +885,8 @@ static char *ssl_client_get_alpn(void *context)
 static int ssl_client_get_tls_version(void *context)
 {
 	CONNCTX *ctx=context;
+
+	ERR_clear_error();
 
 	switch(SSL_version(ctx->ssl))
 	{
@@ -882,6 +907,8 @@ static int ssl_client_write(void *context,void *data,int len)
 	int l;
 	CONNCTX *ctx=context;
 
+	ERR_clear_error();
+
 	if(!len)return 0;
 	if((l=SSL_write(ctx->ssl,data,len))<=0)switch(SSL_get_error(ctx->ssl,l))
 	{
@@ -900,6 +927,8 @@ static int ssl_client_read(void *context,void *data,int len)
 {
 	int l;
 	CONNCTX *ctx=context;
+
+	ERR_clear_error();
 
 	if(!len)return 0;
 	if((l=SSL_read(ctx->ssl,data,len))<=0)switch(SSL_get_error(ctx->ssl,l))
@@ -923,6 +952,8 @@ static int ssl_client_get_max_tls_version(void *context)
 {
 	CLIENTCTX *ctx=context;
 
+	ERR_clear_error();
+
 	switch(SSL_CTX_get_max_proto_version(ctx->ctx))
 	{
 	case TLS1_VERSION:
@@ -940,6 +971,8 @@ static int ssl_client_get_max_tls_version(void *context)
 static int ssl_client_set_max_tls_version(void *context,int version)
 {
 	CLIENTCTX *ctx=context;
+
+	ERR_clear_error();
 
 	switch(version)
 	{
