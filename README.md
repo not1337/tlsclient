@@ -29,9 +29,10 @@ or use client certificates. Related functions are:
 
 If you need to you can use session resumption by storing
 session resume data during tls\_client\_disconnect() and reusing
-them in a later tls\_client\_connect(). To free the stored
-resume data use:
+them in a later tls\_client\_connect(). To get hinting about
+resume data lifetime and to free the stored resume data use:
 
+* tls\_client\_resume\_data\_lifetime\_hint
 * tls\_client\_free\_resume\_data
 
 As a special feature the library can use patched versions of

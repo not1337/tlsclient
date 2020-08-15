@@ -40,11 +40,13 @@ typedef struct
 	COMMON *common;
 	int fd;
 	int err;
+	time_t stamp;
 	mbedtls_ssl_context ssl;
 } CONNCTX;
 
 typedef struct
 {
+	time_t stamp;
 	mbedtls_ssl_session sess;
 } RESUME;
 
@@ -255,6 +257,7 @@ static void *mbed_client_connect(void *context,int fd,int timeout,char *host,
 	CONNCTX *ctx;
 	RESUME *rs=resume;
 	struct pollfd p;
+	struct timespec now;
 
 	p.fd=fd;
 	if(!(ctx=malloc(sizeof(CONNCTX))))goto err1;
@@ -295,6 +298,8 @@ static void *mbed_client_connect(void *context,int fd,int timeout,char *host,
 		MBEDTLS_X509_BADCERT_BAD_KEY))goto err2;
 	if(verify&&(status&MBEDTLS_X509_BADCERT_CN_MISMATCH))goto err3;
 	if(cln->caflag&&(status&MBEDTLS_X509_BADCERT_NOT_TRUSTED))goto err3;
+	if(clock_gettime(CLOCK_MONOTONIC,&now))goto err3;
+	ctx->stamp=now.tv_sec;
 	return ctx;
 
 err3:	mbedtls_ssl_close_notify(&ctx->ssl);
@@ -316,6 +321,7 @@ static void mbed_client_disconnect(void *context,void **resume)
 		if((r=malloc(sizeof(RESUME))))
 		{
 			mbedtls_ssl_session_init(&r->sess);
+			r->stamp=ctx->stamp;
 			if(mbedtls_ssl_get_session(&ctx->ssl,&r->sess))
 				goto fail;
 			else if(r->sess.ticket_len)*resume=r;
@@ -332,6 +338,19 @@ fail:				mbedtls_ssl_session_free(&r->sess);
 	shutdown(ctx->fd,SHUT_RDWR);
 	close(ctx->fd);
 	free(ctx);
+}
+
+static int mbed_client_resume_data_lifetime_hint(void *resume)
+{
+	RESUME *r=resume;
+	struct timespec now;
+	time_t passed;
+
+	if(!r)return 0;
+	if(clock_gettime(CLOCK_MONOTONIC,&now))return -1;
+	passed=now.tv_sec-r->stamp;
+	if(r->sess.ticket_lifetime<passed)return 0;
+	else return r->sess.ticket_lifetime-passed;
 }
 
 static void mbed_client_free_resume_data(void *resume)
@@ -480,6 +499,7 @@ WRAPPER mbedtls=
 	mbed_client_set_alpn,
 	mbed_client_connect,
 	mbed_client_disconnect,
+	mbed_client_resume_data_lifetime_hint,
 	mbed_client_free_resume_data,
 	mbed_client_get_alpn,
 	mbed_client_get_tls_version,

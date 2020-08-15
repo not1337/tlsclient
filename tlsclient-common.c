@@ -209,6 +209,13 @@ void tls_client_disconnect(void *context,void **resume)
 	lib[cmn->libid]->tls_client_disconnect(context,resume);
 }
 
+int tls_client_resume_data_lifetime_hint(void *context,void *resume)
+{
+	COMMON *cmn=*((COMMON **)context);
+
+	return lib[cmn->libid]->tls_client_resume_data_lifetime_hint(resume);
+}
+
 void tls_client_free_resume_data(void *context,void *resume)
 {
 	COMMON *cmn=*((COMMON **)context);

@@ -58,6 +58,7 @@ typedef struct
 	void *(*tls_client_connect)(void *context,int fd,int timeout,char *host,
 		int verify,void *resume);
 	void (*tls_client_disconnect)(void *context,void **resume);
+	int (*tls_client_resume_data_lifetime_hint)(void *resume);
 	void (*tls_client_free_resume_data)(void *resume);
 	char *(*tls_client_get_alpn)(void *context);
 	int (*tls_client_get_tls_version)(void *context);

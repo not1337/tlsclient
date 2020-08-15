@@ -39,6 +39,8 @@ typedef struct
 	COMMON *common;
 	int fd;
 	int err;
+	int hint;
+	time_t stamp;
 	SSL *ssl;
 	char alpn[256];
 } CONNCTX;
@@ -46,6 +48,8 @@ typedef struct
 typedef struct
 {
 	int len;
+	int hint;
+	time_t stamp;
 	unsigned char *ptr;
 	unsigned char data[0];
 } RESUME;
@@ -65,6 +69,7 @@ static BIO_METHOD *biometh;
 #endif
 
 static int rngfd=-1;
+static int conidx=-1;
 static RAND_METHOD sys;
 
 static inline int isipaddr(char *host)
@@ -301,7 +306,20 @@ static int getrandom(unsigned char *buf,int num)
 	return read(rngfd,buf,num);
 }
 
-static int tls_password_cb(char *buf,int size,int rwflag,void *u)
+static int new_session_cb(SSL *s,SSL_SESSION *sess)
+{
+	CONNCTX *ctx;
+	struct timespec now;
+
+	if(!(ctx=SSL_get_ex_data(s,conidx)))return 0;
+	if(!SSL_SESSION_has_ticket(sess))return 0;
+	if(clock_gettime(CLOCK_MONOTONIC,&now))return 0;
+	ctx->stamp=now.tv_sec;
+	ctx->hint=SSL_SESSION_get_ticket_lifetime_hint(sess);
+	return 0;
+}
+
+static int password_cb(char *buf,int size,int rwflag,void *u)
 {
 	CLIENTCTX *ctx=u;
 
@@ -319,6 +337,7 @@ static int ssl_client_global_init(void)
 	OpenSSL_add_all_algorithms();
 	SSL_load_error_strings();
 	if(!RAND_set_rand_method(&sys))goto err2;
+	if((conidx=SSL_get_ex_new_index(0,NULL,NULL,NULL,NULL))<0)goto err2;
 #ifndef NO_EMU
 	if((methidx=BIO_get_new_index())==-1)goto err2;
 	if(!(biometh=BIO_meth_new(
@@ -382,6 +401,9 @@ static void *ssl_client_init(int tls_version,int emu)
 	SSL_CTX_set_verify_depth(ctx->ctx,4);
 	SSL_CTX_set_options(ctx->ctx,SSL_OP_ALL);
 	SSL_CTX_set_options(ctx->ctx,SSL_OP_NO_COMPRESSION);
+	SSL_CTX_set_session_cache_mode(ctx->ctx,SSL_SESS_CACHE_CLIENT|
+		SSL_SESS_CACHE_NO_INTERNAL);
+	SSL_CTX_sess_set_new_cb(ctx->ctx,new_session_cb);
 	switch(emu)
 	{
 	case 0:	return ctx;
@@ -501,7 +523,7 @@ static int ssl_client_add_client_cert(void *context,char *cert,char *key,
 	u=SSL_CTX_get_default_passwd_cb_userdata(ctx->ctx);
 	ctx->tls_getpass=tls_getpass;
 	ctx->prompt=prompt;
-	SSL_CTX_set_default_passwd_cb(ctx->ctx,tls_password_cb);
+	SSL_CTX_set_default_passwd_cb(ctx->ctx,password_cb);
 	SSL_CTX_set_default_passwd_cb_userdata(ctx->ctx,ctx);
 	if(SSL_CTX_use_certificate_file(ctx->ctx,cert,SSL_FILETYPE_PEM)!=1)
 		goto out;
@@ -561,7 +583,10 @@ static void *ssl_client_connect(void *context,int fd,int timeout,char *host,
 	ctx->common=cln->common;
 	ctx->fd=fd;
 	ctx->err=0;
+	ctx->stamp=0;
+	ctx->hint=0;
 	if(!(ctx->ssl=SSL_new(cln->ctx)))goto err2;
+	if(!SSL_set_ex_data(ctx->ssl,conidx,ctx))goto err3;
 	if(rs)
 	{
 		rs->ptr=rs->data;
@@ -683,6 +708,8 @@ static void ssl_client_disconnect(void *context,void **resume)
 			len2=i2d_SSL_SESSION(sess,&r->ptr);
 			if(len1==len2)
 			{
+				r->stamp=ctx->stamp;
+				r->hint=ctx->hint;
 				r->len=len1;
 				*resume=r;
 			}
@@ -695,6 +722,19 @@ static void ssl_client_disconnect(void *context,void **resume)
 	shutdown(ctx->fd,SHUT_RDWR);
 	close(ctx->fd);
 	free(ctx);
+}
+
+static int ssl_client_resume_data_lifetime_hint(void *resume)
+{
+	RESUME *r=resume;
+	struct timespec now;
+	time_t passed;
+
+	if(!r)return 0;
+	if(clock_gettime(CLOCK_MONOTONIC,&now))return -1;
+	passed=now.tv_sec-r->stamp;
+	if(r->hint<passed)return 0;
+	else return r->hint-passed;
 }
 
 static void ssl_client_free_resume_data(void *resume)
@@ -826,6 +866,7 @@ WRAPPER openssl=
 	ssl_client_set_alpn,
 	ssl_client_connect,
 	ssl_client_disconnect,
+	ssl_client_resume_data_lifetime_hint,
 	ssl_client_free_resume_data,
 	ssl_client_get_alpn,
 	ssl_client_get_tls_version,

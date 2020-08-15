@@ -242,6 +242,14 @@ extern int tls_client_load_hello_template(void *context,int group,char *fn);
 extern int tls_client_use_hello_template(void *context,int group,int option);
 
 /*
+ * returns advisory and estimated remaining resumption data lifetime
+ * (based on current time and resumption data recption time) or
+ * -1 in case of an error
+ */
+
+extern int tls_client_resume_data_lifetime_hint(void *context,void *resume);
+
+/*
  * free resume data returned from tlsclient_disconnect()
  */
 

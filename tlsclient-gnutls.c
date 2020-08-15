@@ -42,6 +42,8 @@ typedef struct
 	int vryhost;
 	int caflag;
 	int tktflag;
+	int hint;
+	time_t stamp;
 	gnutls_session_t sess;
 	char alpn[256];
 	char host[0];
@@ -49,6 +51,8 @@ typedef struct
 
 typedef struct
 {
+	int hint;
+	time_t stamp;
 	gnutls_datum_t data;
 } RESUME;
 
@@ -154,12 +158,24 @@ static int hook(gnutls_session_t sess,unsigned int htype,unsigned when,
 	unsigned int incoming,const gnutls_datum_t *msg)
 {
 	CONNCTX *ctx;
+	struct timespec now;
 
 	if(htype!=GNUTLS_HANDSHAKE_NEW_SESSION_TICKET||when!=GNUTLS_HOOK_PRE||
 		!incoming)return 0;
 	ctx=gnutls_session_get_ptr(sess);
 	if(msg->size>=5&&memcmp(msg->data,"\x00\x00\x00\x00\x00",5))
+		if(!clock_gettime(CLOCK_MONOTONIC,&now))
+	{
+		ctx->stamp=now.tv_sec;
+		ctx->hint=msg->data[0];
+		ctx->hint<<=8;
+		ctx->hint+=msg->data[1];
+		ctx->hint<<=8;
+		ctx->hint+=msg->data[2];
+		ctx->hint<<=8;
+		ctx->hint+=msg->data[3];
 		ctx->tktflag=1;
+	}
 	return 0;
 }
 
@@ -400,7 +416,11 @@ static void gnu_client_disconnect(void *context,void **resume)
 				if((r=malloc(sizeof(RESUME))))
 		{
 			if(!gnutls_session_get_data2(ctx->sess,&r->data))
+			{
+				r->hint=ctx->hint;
+				r->stamp=ctx->stamp;
 				*resume=r;
+			}
 			else free(r);
 		}
 	}
@@ -410,6 +430,19 @@ static void gnu_client_disconnect(void *context,void **resume)
 	shutdown(ctx->fd,SHUT_RDWR);
 	close(ctx->fd);
 	free(ctx);
+}
+
+static int gnu_client_resume_data_lifetime_hint(void *resume)
+{
+	RESUME *r=resume;
+	struct timespec now;
+	time_t passed;
+
+	if(!r)return 0;
+	if(clock_gettime(CLOCK_MONOTONIC,&now))return -1;
+	passed=now.tv_sec-r->stamp;
+	if(r->hint<passed)return 0;
+	else return r->hint-passed;
 }
 
 static void gnu_client_free_resume_data(void *resume)
@@ -574,6 +607,7 @@ WRAPPER gnutls=
 	gnu_client_set_alpn,
 	gnu_client_connect,
 	gnu_client_disconnect,
+	gnu_client_resume_data_lifetime_hint,
 	gnu_client_free_resume_data,
 	gnu_client_get_alpn,
 	gnu_client_get_tls_version,

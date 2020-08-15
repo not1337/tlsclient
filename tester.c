@@ -450,6 +450,11 @@ static int emuconnect(char *host,int port,void *cln,int tmo,int verify,
 	printf("Disconnecting now.\n");
 
 	tls_client_disconnect(con,outresume);
+
+	if(outresume&&*outresume)printf("Got session ticket, estimated "
+		"lifetime %d seconds.\n",
+		tls_client_resume_data_lifetime_hint(cln,*outresume));
+
 	return 0;
 
 err1:	return -1;
@@ -504,6 +509,11 @@ static int tlsconnect(char *host,int port,void *cln,int tmo,int verify,int emu,
 	printf("Disconnecting now.\n");
 
 	tls_client_disconnect(con,outresume);
+
+	if(outresume&&*outresume)printf("Got session ticket, estimated "
+		"lifetime %d seconds.\n",
+		tls_client_resume_data_lifetime_hint(cln,*outresume));
+
 	return 0;
 
 err1:	return -1;
