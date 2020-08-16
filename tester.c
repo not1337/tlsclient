@@ -40,7 +40,6 @@ typedef struct
 
 typedef struct
 {
-	
 	union
 	{
 		struct sockaddr sa;
@@ -432,8 +431,8 @@ static int tcpcb(void *data)
 		tcp->timeout));
 }
 
-static int emuconnect(char *host,int port,void *cln,int tmo,int verify,
-	void *inresume,void **outresume,int dohttp,int *tlsver)
+static int emuconnect(char *host,char *tlshost,int port,void *cln,int tmo,
+	int verify,void *inresume,void **outresume,int dohttp,int *tlsver)
 {
 	void *con;
 	char *proto;
@@ -442,8 +441,8 @@ static int emuconnect(char *host,int port,void *cln,int tmo,int verify,
 	if(gethostaddr(host,port,&tcp.addr.sa))goto err1;
 	tcp.timeout=tmo;
 
-	if(!(con=tls_client_emulation_connect(cln,tmo,host,verify,inresume,
-		tlsver,&proto,tcpcb,&tcp)))
+	if(!(con=tls_client_emulation_connect(cln,tmo,tlshost?tlshost:host,
+		verify,inresume,tlsver,&proto,tcpcb,&tcp)))
 	{
 		fprintf(stderr,"tls_client_emulation_connect failure\n");
 		goto err1;
@@ -477,8 +476,9 @@ err1:	return -1;
 
 #endif
 
-static int tlsconnect(char *host,int port,void *cln,int tmo,int verify,int emu,
-	void *inresume,void **outresume,int dohttp,int *tlsver)
+static int tlsconnect(char *host,char *tlshost,int port,void *cln,int tmo,
+	int verify,int emu,void *inresume,void **outresume,int dohttp,
+	int *tlsver)
 {
 	int s;
 	void *con;
@@ -501,7 +501,8 @@ static int tlsconnect(char *host,int port,void *cln,int tmo,int verify,int emu,
 
 	if((s=doconnect(&addr.sa,sizeof(addr),tmo))==-1)goto err1;
 
-	if(!(con=tls_client_connect(cln,s,tmo,host,verify,inresume)))
+	if(!(con=tls_client_connect(cln,s,tmo,tlshost?tlshost:host,verify,
+		inresume)))
 	{
 		fprintf(stderr,"tls_client_connect failure\n");
 		goto err1;
@@ -548,6 +549,7 @@ static void usage(char *self)
 		"-0            use TLSv1.0 or better (default)\n"
 		"-2            use TLSv1.2 or better\n"
 		"-3            use TLSv1.3 or better\n"
+		"-T <hostname> use this hostname for TLS verification\n"
 		"-O            do not process received OCSP status response\n"
 		"-F            fetch OCSP status from OCSP server if required\n"
 		"-H            do HTTP GET request when connected\n"
@@ -599,6 +601,7 @@ int main(int argc,char *argv[])
 	char *ptr;
 	void *cln;
 	void *rs=NULL;
+	char *tlshost=NULL;
 	char *lpath=NULL;
 	char *certfile=NULL;
 	char *keyfile=NULL;
@@ -607,9 +610,9 @@ int main(int argc,char *argv[])
 	char bfr[1024];
 
 #ifndef NO_EMU
-	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRHOFs:E:L:lN:"))!=-1)
+	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRHOFT:s:E:L:lN:"))!=-1)
 #else
-	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRHOF"))!=-1)
+	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRHOFT:"))!=-1)
 #endif
 		switch(l)
 	{
@@ -684,6 +687,9 @@ int main(int argc,char *argv[])
 		break;
 	case 'F':
 		getocsp=1;
+		break;
+	case 'T':
+		tlshost=optarg;
 		break;
 	default:usage(argv[0]);
 	}
@@ -774,13 +780,13 @@ int main(int argc,char *argv[])
 #ifndef NO_EMU
 	if(hlemu!=-1)
 	{
-		if(!emuconnect(argv[optind],port,cln,tmo,verifyhost,
+		if(!emuconnect(argv[optind],tlshost,port,cln,tmo,verifyhost,
 			NULL,doresume?&rs:NULL,http,&tlsver))r=0;
 	}
-	else if(!tlsconnect(argv[optind],port,cln,tmo,verifyhost,scnt?1:0,
-		NULL,doresume?&rs:NULL,http,NULL))r=0;
+	else if(!tlsconnect(argv[optind],tlshost,port,cln,tmo,verifyhost,
+		scnt?1:0,NULL,doresume?&rs:NULL,http,NULL))r=0;
 #else
-	if(!tlsconnect(argv[optind],port,cln,tmo,verifyhost,scnt?1:0,
+	if(!tlsconnect(argv[optind],tlshost,port,cln,tmo,verifyhost,scnt?1:0,
 		NULL,doresume?&rs:NULL,http,NULL))r=0;
 #endif
 
@@ -789,15 +795,15 @@ int main(int argc,char *argv[])
 	else if(hlemu!=-1)
 	{
 		r=1;
-		if(!emuconnect(argv[optind],port,cln,tmo,verifyhost,rs,NULL,
-			http,&tlsver))r=0;
+		if(!emuconnect(argv[optind],tlshost,port,cln,tmo,verifyhost,rs,
+			NULL,http,&tlsver))r=0;
 	}
 #endif
 	else
 	{
 		r=1;
-		if(!tlsconnect(argv[optind],port,cln,tmo,verifyhost,scnt?1:0,
-			rs,NULL,http,NULL))r=0;
+		if(!tlsconnect(argv[optind],tlshost,port,cln,tmo,verifyhost,
+			scnt?1:0,rs,NULL,http,NULL))r=0;
 	}
 
 	if(rs)tls_client_free_resume_data(cln,rs);
