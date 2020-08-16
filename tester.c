@@ -221,6 +221,20 @@ static int doconnect(struct sockaddr *addr,int size,int tmo)
 	return s;
 }
 
+static int ocspconnect(char *host,int port,void *arg)
+{
+	int tmo=*((int *)arg);
+	union
+	{
+		struct sockaddr sa;
+		struct sockaddr_in a4;
+		struct sockaddr_in6 a6;
+	} addr;
+
+	if(gethostaddr(host,port,&addr.sa))return -1;
+	return doconnect(&addr.sa,sizeof(addr),tmo);
+}
+
 static int http11_get(char *host,int fd,void *ctx)
 {
 	int l;
@@ -534,6 +548,8 @@ static void usage(char *self)
 		"-0            use TLSv1.0 or better (default)\n"
 		"-2            use TLSv1.2 or better\n"
 		"-3            use TLSv1.3 or better\n"
+		"-O            do not process received OCSP status response\n"
+		"-F            fetch OCSP status from OCSP server if required\n"
 		"-H            do HTTP GET request when connected\n"
 		"-R            test session resumption\n"
 		"-c <cafile>   append CA certificates from <cafile>\n"
@@ -578,6 +594,8 @@ int main(int argc,char *argv[])
 	int cacnt=0;
 	int doresume=0;
 	int http=0;
+	int noocsp=0;
+	int getocsp=0;
 	char *ptr;
 	void *cln;
 	void *rs=NULL;
@@ -589,9 +607,9 @@ int main(int argc,char *argv[])
 	char bfr[1024];
 
 #ifndef NO_EMU
-	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRHs:E:L:lN:"))!=-1)
+	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRHOFs:E:L:lN:"))!=-1)
 #else
-	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRH"))!=-1)
+	while((l=getopt(argc,argv,"023c:hp:t:e:k:AomgRHOF"))!=-1)
 #endif
 		switch(l)
 	{
@@ -661,6 +679,12 @@ int main(int argc,char *argv[])
 	case 'H':
 		http=1;
 		break;
+	case 'O':
+		noocsp=1;
+		break;
+	case 'F':
+		getocsp=1;
+		break;
 	default:usage(argv[0]);
 	}
 
@@ -727,6 +751,11 @@ int main(int argc,char *argv[])
 			goto err3;
 		}
 	}
+
+	if(noocsp)tls_client_set_oscp_verification(cln,
+		TLS_CLIENT_OCSP_VERIFICATION_OFF);
+
+	if(getocsp)tls_client_set_ocsp_connect_callback(cln,ocspconnect,&tmo);
 
 	for(l=0;l<cacnt;l++)if(tls_client_add_cafile(cln,cafile[l]))
 	{

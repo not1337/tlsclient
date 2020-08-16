@@ -128,6 +128,15 @@ int tls_client_add_cafile(void *context,char *fn)
 	return lib[cmn->libid]->tls_client_add_cafile(context,fn);
 }
 
+void tls_client_set_ocsp_connect_callback(void *context,
+	int (*connectcb)(char *host,int port,void *arg),void *arg)
+{
+	COMMON *cmn=*((COMMON **)context);
+
+	lib[cmn->libid]->tls_client_set_ocsp_connect_callback(context,
+		connectcb,arg);
+}
+
 void tls_client_set_oscp_verification(void *context,int mode)
 {
 	COMMON *cmn=*((COMMON **)context);

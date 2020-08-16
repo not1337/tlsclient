@@ -31,6 +31,8 @@ typedef struct
 	COMMON cmn;
 	int caflag;
 	int noocsp;
+	int (*connectcb)(char *host,int port,void *arg);
+	void *connarg;
 	int (*tls_getpass)(char *bfr,int size,char *prompt);
 	char *prompt;
 	unsigned char *alpn;
@@ -309,11 +311,121 @@ static int getrandom(unsigned char *buf,int num)
 	return read(rngfd,buf,num);
 }
 
+static OCSP_RESPONSE *fetch_ocsp(CLIENTCTX *ctx,char *host,int port,char *path,
+	OCSP_REQUEST *req)
+{
+	int rlen;
+	int hlen;
+	int dlen;
+	int tot;
+	int l;
+	int fd;
+	int i;
+	int j;
+	int k;
+	int flag;
+	int off;
+	unsigned char *reqdta;
+	const unsigned char *rspdta;
+	unsigned char *ptr;
+	char *line;
+	char *mem;
+	struct pollfd p;
+	char bfr[4096];
+
+	rlen=i2d_OCSP_REQUEST(req,NULL);
+	if(!(ptr=reqdta=malloc(rlen)))goto err1;
+	if(i2d_OCSP_REQUEST(req,&ptr)!=rlen)goto err2;
+
+	for(i=0;i<2;i++)
+	{
+		if(!i)hlen=snprintf(bfr,sizeof(bfr)-rlen,"POST /%s HTTP/1.0\r\n"
+			"Content-Type: application/ocsp-request\r\n"
+			"Content-Length: %d\r\n\r\n",path,rlen);
+		else hlen=snprintf(bfr,sizeof(bfr)-rlen,"POST /%s HTTP/1.0\r\n"
+			"Host: %s\r\n"
+			"Content-Type: application/ocsp-request\r\n"
+			"Content-Length: %d\r\n\r\n",path,host,rlen);
+		memcpy(bfr+hlen,reqdta,rlen);
+		tot=hlen+rlen;
+
+		if((fd=ctx->connectcb(host,port,ctx->connarg))==-1)goto err2;
+		if(write(fd,bfr,tot)!=tot)goto err3;
+
+		p.fd=fd;
+		p.events=POLLIN;
+		tot=0;
+		flag=0;
+		while(tot<sizeof(bfr))
+		{
+			if(poll(&p,1,2000)<1||p.revents!=POLLIN)goto err3;
+			if((l=read(fd,bfr+tot,sizeof(bfr-tot)))<0)goto err3;
+			if(!l)break;
+			tot+=l;
+			if((flag&4)&&tot>=off+dlen)break;
+			if(!flag)
+			{
+				for(j=0,k=0;j<tot;j++)if(bfr[j]=='\r')continue;
+				else if(bfr[j]!='\n')k=0;
+				else if(++k==2)
+				{
+					bfr[j]=0;
+					flag=1;
+					off=j+1;
+					break;
+				}
+
+				if(flag)
+				{
+					if(!(line=strtok_r(bfr,"\r\n",&mem)))
+						goto err3;
+
+					if(strncmp(line,"HTTP/1.0 200",12)&&
+						strncmp(line,"HTTP/1.1 200",12))
+					{
+						if(!i)goto skip;
+						else goto err3;
+					}
+
+					while((line=strtok_r(NULL,"\r\n",&mem)))
+					{
+						if(!strcasecmp(line,"Content-"
+							"Type: application/"
+							"ocsp-response"))
+								flag|=2;
+						else if(!strncasecmp(line,
+							"Content-Length: ",16))
+						{
+							dlen=atoi(line+16);
+							flag|=4;
+						}
+					}
+				}
+			}
+		}
+
+skip:		close(fd);
+		if((flag&3)==3)break;
+	}
+
+	free(reqdta);
+	if(flag&4)tot=off+dlen;
+	rspdta=(const unsigned char *)(bfr+off);
+	return d2i_OCSP_RESPONSE(NULL,&rspdta,tot-off);
+
+err3:	close(fd);
+err2:	free(reqdta);
+err1:	return NULL;
+}
+
 static int ocsp_cb(SSL *s,void *arg)
 {
 	int i;
 	int reason;
+	int port;
 	long l;
+	char *host;
+	char *ptr;
 	const unsigned char *rsp;
 	OCSP_RESPONSE *resp;
 	OCSP_BASICRESP *basic;
@@ -321,11 +433,14 @@ static int ocsp_cb(SSL *s,void *arg)
 	X509_STORE *store;
 	X509 *x;
 	STACK_OF(OPENSSL_STRING) *ulist;
+	OCSP_REQUEST *req;
+	OCSP_CERTID *id;
 	CLIENTCTX *ctx=arg;
 	OCSP_SINGLERESP *single;
 	ASN1_GENERALIZEDTIME *revtime;
 	ASN1_GENERALIZEDTIME *thisupd;
 	ASN1_GENERALIZEDTIME *nextupd;
+	char url[256];
 
 	ERR_clear_error();
 
@@ -335,26 +450,65 @@ static int ocsp_cb(SSL *s,void *arg)
 	{
 		if(!rsp)
 		{
+			if(!ctx->connectcb)goto skip1;
 			/* note, X509_get1_ocsp and X509_email_free are
 			   exported but not documented, sigh */
 			if(!(x=SSL_get_peer_certificate(s)))goto skip1;
 			if(!(ulist=X509_get1_ocsp(x)))goto skip1;
 			if(!sk_OPENSSL_STRING_num(ulist))goto skip2;
-			/* FIXME: the following function returns the string
-			   pointer to the OCSP URL, do stuff here */
-			sk_OPENSSL_STRING_value(ulist,0);
-			goto skip2;
+			strncpy(url,sk_OPENSSL_STRING_value(ulist,0),
+				sizeof(url));
+			url[sizeof(url)-1]=0;
+			X509_email_free(ulist);
+			if(strncmp(url,"http://",7))goto skip1;
+			host=url+7;
+			port=80;
+			if((ptr=strchr(host,':')))
+			{
+				*ptr++=0;
+				port=atoi(ptr);
+				if(port<1||port>65535)goto bad1;
+				if((ptr=strchr(ptr,'/')))*ptr++=0;
+				else ptr="";
+			}
+			else if((ptr=strchr(host,'/')))*ptr++=0;
+			else ptr="";
+			if(!(chain=SSL_get_peer_cert_chain(s)))goto err1;
+			if(sk_X509_num(chain)<2)goto bad1;
+			if(!(req=OCSP_REQUEST_new()))goto err1;
+			if(!(id=OCSP_cert_to_id(EVP_sha1(),
+				sk_X509_value(chain,0),sk_X509_value(chain,1))))
+			{
+				OCSP_REQUEST_free(req);
+				goto err1;
+			}
+			if(!OCSP_request_add0_id(req,id))
+			{
+				OCSP_CERTID_free(id);
+				OCSP_REQUEST_free(req);
+				goto err1;
+			}
+			if(!OCSP_request_add1_nonce(req,NULL,0))
+			{
+				OCSP_REQUEST_free(req);
+				goto err1;
+			}
+			resp=fetch_ocsp(ctx,host,port,ptr,req);
+			OCSP_REQUEST_free(req);
+			if(!resp)goto err1;
+			goto common;
+			goto bad1;
 		}
 		else goto err1;
 	}
 	if(!(resp=d2i_OCSP_RESPONSE(NULL,&rsp,l)))goto err1;
 
-	if(OCSP_response_status(resp)!=OCSP_RESPONSE_STATUS_SUCCESSFUL)
+common:	if(OCSP_response_status(resp)!=OCSP_RESPONSE_STATUS_SUCCESSFUL)
 		goto bad2;
 
 	if(!(basic=OCSP_response_get1_basic(resp)))goto err2;
-	if(!(chain=SSL_get_peer_cert_chain(s)))goto err3;
 	if(!(store=SSL_CTX_get_cert_store(ctx->ctx)))goto err3;
+	if(!(chain=SSL_get_peer_cert_chain(s)))goto err3;
 
 	switch(OCSP_basic_verify(basic,chain,store,0))
 	{
@@ -388,7 +542,7 @@ err1:	return -1;
 
 bad3:	OCSP_BASICRESP_free(basic);
 bad2:	OCSP_RESPONSE_free(resp);
-	return 0;
+bad1:	return 0;
 
 skip2:	X509_email_free(ulist);
 skip1:	return 1;
@@ -608,6 +762,15 @@ static int ssl_client_add_cafile(void *context,char *fn)
 	if(!SSL_CTX_load_verify_locations(ctx->ctx,fn,NULL))return -1;
 	ctx->caflag=1;
 	return 0;
+}
+
+static void ssl_client_set_ocsp_connect_callback(void *context,
+	int (*connectcb)(char *host,int port,void *arg),void *arg)
+{
+	CLIENTCTX *ctx=context;
+
+	ctx->connectcb=connectcb;
+	ctx->connarg=arg;
 }
 
 static void ssl_client_set_oscp_verification(void *context,int mode)
@@ -999,6 +1162,7 @@ WRAPPER openssl=
 	ssl_client_init,
 	ssl_client_fini,
 	ssl_client_add_cafile,
+	ssl_client_set_ocsp_connect_callback,
 	ssl_client_set_oscp_verification,
 	ssl_client_add_client_cert,
 	ssl_client_set_alpn,

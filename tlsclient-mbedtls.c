@@ -198,6 +198,11 @@ static int mbed_client_add_cafile(void *context,char *fn)
 	return 0;
 }
 
+static void mbed_client_set_ocsp_connect_callback(void *context,
+	int (*connectcb)(char *host,int port,void *arg),void *arg)
+{
+}
+
 static void mbed_client_set_oscp_verification(void *context,int mode)
 {
 }
@@ -526,6 +531,7 @@ WRAPPER mbedtls=
 	mbed_client_init,
 	mbed_client_fini,
 	mbed_client_add_cafile,
+	mbed_client_set_ocsp_connect_callback,
 	mbed_client_set_oscp_verification,
 	mbed_client_add_client_cert,
 	mbed_client_set_alpn,

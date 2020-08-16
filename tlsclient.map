@@ -15,6 +15,7 @@ V_1_0
 		tls_client_emulation_init;
 		tls_client_fini;
 		tls_client_add_cafile;
+		tls_client_set_ocsp_connect_callback;
 		tls_client_set_oscp_verification;
 		tls_client_add_client_cert;
 		tls_client_set_alpn;

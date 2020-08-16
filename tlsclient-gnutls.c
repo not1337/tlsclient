@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <stdio.h>
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
 #include <gnutls/crypto.h>
@@ -31,6 +32,8 @@ typedef struct
 	int nalpn;
 	int sid;
 	char *vers;
+	int (*connectcb)(char *host,int port,void *arg);
+	void *connarg;
 	gnutls_certificate_credentials_t cred;
 	gnutls_x509_trust_list_t tl;
 	gnutls_datum_t *alpn;
@@ -48,6 +51,8 @@ typedef struct
 	int tktflag;
 	int hint;
 	time_t stamp;
+	int (*connectcb)(char *host,int port,void *arg);
+	void *connarg;
 	gnutls_session_t sess;
 	gnutls_x509_trust_list_t tl;
 	char alpn[256];
@@ -200,46 +205,204 @@ static int tls_verify(gnutls_session_t sess)
 	return GNUTLS_E_CERTIFICATE_VERIFICATION_ERROR;
 }
 
+static int fetch_ocsp(CONNCTX *ctx,char *host,int port,char *path,
+	gnutls_ocsp_req_t req,gnutls_ocsp_resp_t resp)
+{
+	int i;
+	int j;
+	int k;
+	int l;
+	int fd;
+	int hlen;
+	int dlen;
+	int tot;
+	int flag;
+	int off;
+	char *line;
+	char *mem;
+	gnutls_datum_t reqdta;
+	struct pollfd p;
+	char bfr[4096];
+
+	if(gnutls_ocsp_req_export(req,&reqdta))goto err1;
+
+	for(i=0;i<2;i++)
+	{
+		if(!i)hlen=snprintf(bfr,sizeof(bfr)-reqdta.size,
+			"POST /%s HTTP/1.0\r\n"
+			"Content-Type: application/ocsp-request\r\n"
+			"Content-Length: %d\r\n\r\n",path,reqdta.size);
+		else hlen=snprintf(bfr,sizeof(bfr)-reqdta.size,
+			"POST /%s HTTP/1.0\r\n"
+			"Host: %s\r\n"
+			"Content-Type: application/ocsp-request\r\n"
+			"Content-Length: %d\r\n\r\n",path,host,reqdta.size);
+		memcpy(bfr+hlen,reqdta.data,reqdta.size);
+		tot=hlen+reqdta.size;
+
+		if((fd=ctx->connectcb(host,port,ctx->connarg))==-1)goto err2;
+		if(write(fd,bfr,tot)!=tot)goto err3;
+
+		p.fd=fd;
+		p.events=POLLIN;
+		tot=0;
+		flag=0;
+		while(tot<sizeof(bfr))
+		{
+			if(poll(&p,1,2000)<1||p.revents!=POLLIN)goto err3;
+			if((l=read(fd,bfr+tot,sizeof(bfr-tot)))<0)goto err3;
+			if(!l)break;
+			tot+=l;
+			if((flag&4)&&tot>=off+dlen)break;
+			if(!flag)
+			{
+				for(j=0,k=0;j<tot;j++)if(bfr[j]=='\r')continue;
+				else if(bfr[j]!='\n')k=0;
+				else if(++k==2)
+				{
+					bfr[j]=0;
+					flag=1;
+					off=j+1;
+					break;
+				}
+
+				if(flag)
+				{
+					if(!(line=strtok_r(bfr,"\r\n",&mem)))
+						goto err3;
+
+					if(strncmp(line,"HTTP/1.0 200",12)&&
+						strncmp(line,"HTTP/1.1 200",12))
+					{
+						if(!i)goto skip;
+						else goto err3;
+					}
+
+					while((line=strtok_r(NULL,"\r\n",&mem)))
+					{
+						if(!strcasecmp(line,"Content-"
+							"Type: application/"
+							"ocsp-response"))
+								flag|=2;
+						else if(!strncasecmp(line,
+							"Content-Length: ",16))
+						{
+							dlen=atoi(line+16);
+							flag|=4;
+						}
+					}
+				}
+			}
+		}
+
+skip:		close(fd);
+		if((flag&3)==3)break;
+	}
+
+	gnutls_free(reqdta.data);
+	reqdta.data=(unsigned char *)(bfr+off);
+	reqdta.size=tot-off;
+	return gnutls_ocsp_resp_import(resp,&reqdta);
+
+err3:	close(fd);
+err2:	gnutls_free(reqdta.data);
+err1:	return -1;
+}
+
 static int ocsp_verify(gnutls_session_t sess)
 {
+	int i;
 	unsigned int vry;
 	unsigned int status;
 	unsigned int reason;
 	unsigned int size;
+	int port;
 	time_t this;
 	time_t next;
 	time_t curr;
+	char *host;
+	char *ptr;
 	gnutls_ocsp_resp_t resp;
 	gnutls_datum_t datum;
 	gnutls_x509_crt_t cert;
+	gnutls_x509_crt_t issuer;
+	gnutls_ocsp_req_t req;
 	const gnutls_datum_t *list;
 	CONNCTX *ctx;
+	char url[256];
 
 	ctx=gnutls_session_get_ptr(sess);
 	if(!ctx->tl||ctx->noocsp)goto skip1;
 	if(!gnutls_ocsp_status_request_is_checked(sess,GNUTLS_OCSP_SR_IS_AVAIL))
 	{
+		if(!ctx->connectcb)goto skip1;
 		if(!(list=gnutls_certificate_get_peers(sess,&size)))goto skip1;
 		if(gnutls_x509_crt_init(&cert))goto skip1;
 		if(gnutls_x509_crt_import(cert,list,GNUTLS_X509_FMT_DER))
 			goto skip2;
 		if(gnutls_x509_crt_get_authority_info_access(cert,0,
 			GNUTLS_IA_OCSP_URI,&datum,NULL))goto skip2;
-		/* FIXME: datum points to the OCSP request URI,
-		   handle request stuff here */
-		goto skip2;
+		memcpy(url,datum.data,
+			datum.size>sizeof(url)?sizeof(url):datum.size);
+		if(datum.size<sizeof(url))url[datum.size]=0;
+		else url[sizeof(url)-1]=0;
+		if(strncmp(url,"http://",7))goto skip2;
+		host=url+7;
+		port=80;
+		if((ptr=strchr(host,':')))
+		{
+			*ptr++=0;
+			port=atoi(ptr);
+			if(port<1||port>65535)goto bad2;
+			if((ptr=strchr(ptr,'/')))*ptr++=0;
+			else ptr="";
+		}
+		else if((ptr=strchr(host,'/')))*ptr++=0;
+		else ptr="";
+		if(size<2)goto bad2;
+		if(gnutls_x509_crt_init(&issuer))goto bad2;
+		if(gnutls_x509_crt_import(issuer,&list[1],GNUTLS_X509_FMT_DER))
+			goto bad3;
+		if(gnutls_ocsp_req_init(&req))goto bad3;
+		if(gnutls_ocsp_req_add_cert(req,GNUTLS_DIG_SHA1,issuer,cert))
+			goto bad4;
+		if(gnutls_ocsp_req_randomize_nonce(req))goto bad4;
+		if(gnutls_ocsp_resp_init(&resp))goto bad4;
+		if(fetch_ocsp(ctx,host,port,ptr,req,resp))goto bad5;
+		if(gnutls_ocsp_resp_check_crt(resp,0,cert))goto bad5;
+		gnutls_x509_crt_deinit(issuer);
+		gnutls_x509_crt_deinit(cert);
+		goto common;
 	}
+	if(!(list=gnutls_certificate_get_peers(sess,&size)))goto err1;
 	if(!gnutls_ocsp_status_request_is_checked(sess,0))goto err1;
 	if(gnutls_ocsp_status_request_get(sess,&datum))goto err1;
 	if(gnutls_ocsp_resp_init(&resp))goto err1;
 	if(gnutls_ocsp_resp_import(resp,&datum))goto err2;
-	if(gnutls_ocsp_resp_verify(resp,ctx->tl,&vry,
+common:	if(gnutls_ocsp_resp_verify(resp,ctx->tl,&vry,
 		GNUTLS_VERIFY_DO_NOT_ALLOW_WILDCARDS|
 		GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES|
 		GNUTLS_VERIFY_IGNORE_UNKNOWN_CRIT_EXTENSIONS))goto err2;
-	/* not nice but what shall we do, fail every connection because
-	   the OCSP signer is not in the system's default CA file? */
-	if(vry&&vry!=GNUTLS_OCSP_VERIFY_UNTRUSTED_SIGNER)goto err2;
+	if(vry)for(i=1;i<size;i++)
+	{
+		if(gnutls_x509_crt_init(&cert))continue;
+		if(gnutls_x509_crt_import(cert,&list[i],GNUTLS_X509_FMT_DER))
+		{
+			gnutls_x509_crt_deinit(cert);
+			continue;
+		}
+		if(gnutls_ocsp_resp_verify_direct(resp,cert,&vry,
+			GNUTLS_VERIFY_DO_NOT_ALLOW_WILDCARDS|
+			GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES|
+			GNUTLS_VERIFY_IGNORE_UNKNOWN_CRIT_EXTENSIONS))
+		{
+			gnutls_x509_crt_deinit(cert);
+			continue;
+		}
+		gnutls_x509_crt_deinit(cert);
+		if(!vry)break;
+	}
+	if(vry)goto err2;
 	if(gnutls_ocsp_resp_get_single(resp,0,NULL,NULL,NULL,NULL,&status,
 		&this,&next,NULL,&reason))goto err2;
 	if(status!=GNUTLS_OCSP_CERT_GOOD)goto err2;
@@ -253,6 +416,12 @@ err1:	return -1;
 
 skip2:	gnutls_x509_crt_deinit(cert);
 skip1:	return 0;
+
+bad5:	gnutls_ocsp_resp_deinit(resp);
+bad4:	gnutls_ocsp_req_deinit(req);
+bad3:	gnutls_x509_crt_deinit(issuer);
+bad2:	gnutls_x509_crt_deinit(cert);
+	return -1;
 }
 
 static int gnu_client_global_init(void)
@@ -336,6 +505,15 @@ static int gnu_client_add_cafile(void *context,char *fn)
 	return 0;
 }
 
+static void gnu_client_set_ocsp_connect_callback(void *context,
+	int (*connectcb)(char *host,int port,void *arg),void *arg)
+{
+	CLIENTCTX *ctx=context;
+
+	ctx->connectcb=connectcb;
+	ctx->connarg=arg;
+}
+
 static void gnu_client_set_oscp_verification(void *context,int mode)
 {
 	CLIENTCTX *ctx=context;
@@ -407,6 +585,8 @@ static void *gnu_client_connect(void *context,int fd,int timeout,char *host,
 	if(!(ctx=malloc(sizeof(CONNCTX)+strlen(host)+1)))goto err1;
 	ctx->common=cln->common;
 	ctx->noocsp=cln->noocsp;
+	ctx->connectcb=cln->connectcb;
+	ctx->connarg=cln->connarg;
 	ctx->tktflag=0;
 	ctx->fd=fd;
 	ctx->err=0;
@@ -690,6 +870,7 @@ WRAPPER gnutls=
 	gnu_client_init,
 	gnu_client_fini,
 	gnu_client_add_cafile,
+	gnu_client_set_ocsp_connect_callback,
 	gnu_client_set_oscp_verification,
 	gnu_client_add_client_cert,
 	gnu_client_set_alpn,

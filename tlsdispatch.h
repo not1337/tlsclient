@@ -51,6 +51,8 @@ typedef struct
 	void *(*tls_client_init)(int tls_version,int emu);
 	void (*tls_client_fini)(void *context);
 	int (*tls_client_add_cafile)(void *context,char *fn);
+	void (*tls_client_set_ocsp_connect_callback)(void *context,
+		int (*connectcb)(char *host,int port,void *arg),void *arg);
 	void (*tls_client_set_oscp_verification)(void *context,int mode);
 	int (*tls_client_add_client_cert)(void *context,char *cert,char *key,
 		int (*tls_getpass)(char *bfr,int size,char *prompt),

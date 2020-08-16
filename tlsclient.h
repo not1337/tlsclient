@@ -199,6 +199,17 @@ extern int tls_client_set_max_tls_version(void *context,int version);
 extern int tls_client_add_cafile(void *context,char *fn);
 
 /*
+ * set connect callback for OCSP verification - if not set no OCSP
+ * verification takes place in case the server certificate presented
+ * by the peer contains an OCSP URI but the server doesn't provide
+ * OCSP data. Note that only http URIs (i.e. no https) are processed,
+ * other URIs are ignored.
+ */
+
+extern void tls_client_set_ocsp_connect_callback(void *context,
+	int (*connectcb)(char *host,int port,void *arg),void *arg);
+
+/*
  * enable or disable OSCP verification
  */
 

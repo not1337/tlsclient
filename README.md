@@ -36,17 +36,31 @@ i
 * tls\_client\_resume\_data\_lifetime\_hint
 * tls\_client\_free\_resume\_data
 
-Currently only server provided OCSP checking takes place with the
-exception of the mbedTLS backend for which provides no OCSP functionality.
-A future release may include the capability of fetching the OCSP
-data from the server specified in the server certificate
-by means of a callback which needs to provide an established
-TCP connection.
-Note that OCSP verification is implicitely disabled when there
-are no CA certificates configured, this is a basic requirement
-for OCSP verification to work.
-If you want to disable OCSP verification for whatever reason use:
+Note that resumption status is not available per default for mbedTLS
+and must be explicitely compile time enabled, as using this functionality
+breaks binary compatability of the tlsclient library and any mbedTLS
+library the tlsclient library was not compiled against.
 
+The following paragraph about OCSP is not valid for the mbedTLS
+backend which does not support any form of OCSP processing.
+
+OCSP status responses received from the accessed server are
+validated by default if certificate chain checking is enabled.
+This behaviour and thus OCSP verification can be disabled.
+If a connect callback is configured, OCSP verification is
+enabled, the server does not provide an OCSP status and the
+server certificate contains an http protocol OCSP URI,
+the library will try to fetch the OCSP data from the server
+specified in the OCSP URI. If fetching the data or OCSP verifying
+fails the requested TLS connection attempt will be aborted.
+Note that it doesn't make really sense for https to be used for
+an OCSP server: the server certificate would then need to be
+verified, resulting in a subsequent OCSP verification which may
+result in another OCSP data fetching attempt... - the result
+may be an endless loop. Furthermore note that externally fetched
+OCSP data are not cached. Related functions are:
+
+* tls\_client\_set\_ocsp\_connect\_callback 
 * tls\_client\_set\_oscp\_verification
 
 As a special feature the library can use patched versions of
