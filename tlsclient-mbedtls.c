@@ -31,6 +31,8 @@ typedef struct
 	COMMON cmn;
 	int rng;
 	int caflag;
+	int major;
+	int minor;
 	char **alpn;
 	mbedtls_ssl_config conf;
 	mbedtls_x509_crt crt;
@@ -124,6 +126,12 @@ static void *mbed_client_init(int tls_version,int emu)
 	ctx->common=&ctx->cmn;
 	ctx->caflag=0;
 	ctx->alpn=NULL;
+	ctx->major=MBEDTLS_SSL_MAJOR_VERSION_3;
+#ifdef MBEDTLS_SSL_MINOR_VERSION_4
+	ctx->minor=MBEDTLS_SSL_MINOR_VERSION_4;
+#else
+	ctx->minor=MBEDTLS_SSL_MINOR_VERSION_3;
+#endif
 	if((ctx->rng=open("/dev/urandom",O_RDONLY|O_CLOEXEC))==-1)goto err2;
 	mbedtls_ssl_config_init(&ctx->conf);
 	if(mbedtls_ssl_config_defaults(&ctx->conf,MBEDTLS_SSL_IS_CLIENT,
@@ -271,6 +279,9 @@ static void *mbed_client_connect(void *context,int fd,int timeout,char *host,
 	RESUME *rs=resume;
 	struct pollfd p;
 	struct timespec now;
+#ifndef MBEDTLS_DETECT_RESUME
+	const mbedtls_x509_crt *crt;
+#endif
 
 	p.fd=fd;
 	if(!(ctx=malloc(sizeof(CONNCTX))))goto err1;
@@ -293,6 +304,10 @@ static void *mbed_client_connect(void *context,int fd,int timeout,char *host,
 	while((r=mbedtls_ssl_handshake(&ctx->ssl)))
 	{
 #ifdef MBEDTLS_DETECT_RESUME
+		/* this absolutely breaks binary compatability though
+		   it is the only way the definitely detect if session
+		   resume did take place */
+
 		if(ctx->ssl.handshake)if(ctx->ssl.handshake->resume)
 			ctx->isresumed=1;
 #endif
@@ -311,6 +326,13 @@ static void *mbed_client_connect(void *context,int fd,int timeout,char *host,
 		default:goto err2;
 		}
 	}
+#ifndef MBEDTLS_DETECT_RESUME
+	/* this hopefully is a binary compatible way to detect a resumed
+	   session - only that it will not work with self signed certificates */
+
+	if((crt=mbedtls_ssl_get_peer_cert(&ctx->ssl)))if(!crt->next)
+		ctx->isresumed=1;
+#endif
 	if(!ctx->isresumed)
 	{
 		status=mbedtls_ssl_get_verify_result(&ctx->ssl);
@@ -411,6 +433,11 @@ static int mbed_client_get_tls_version(void *context)
 {
 	CONNCTX *ctx=context;
 
+	/* breaks binary compatability if used against a mbedTLS library
+	   with MBEDTLS_SSL_RENEGOTIATION disabled (usually not the case),
+	   breaks binary compatablility if mbedtls_ssl_context without
+	   library link time version number change */
+
 	if(ctx->ssl.major_ver!=MBEDTLS_SSL_MAJOR_VERSION_3)return -1;
 	switch(ctx->ssl.minor_ver)
 	{
@@ -474,8 +501,8 @@ static int mbed_client_get_max_tls_version(void *context)
 {
 	CLIENTCTX *ctx=context;
 
-	if(ctx->conf.max_major_ver!=MBEDTLS_SSL_MAJOR_VERSION_3)return -1;
-	switch(ctx->conf.max_minor_ver)
+	if(ctx->major!=MBEDTLS_SSL_MAJOR_VERSION_3)return -1;
+	switch(ctx->minor)
 	{
 	case MBEDTLS_SSL_MINOR_VERSION_1:
 		return TLS_CLIENT_TLS_1_0;
@@ -501,22 +528,26 @@ static int mbed_client_set_max_tls_version(void *context,int version)
 		mbedtls_ssl_conf_max_version(&ctx->conf,
 			MBEDTLS_SSL_MAJOR_VERSION_3,
 			MBEDTLS_SSL_MINOR_VERSION_1);
+		ctx->minor=MBEDTLS_SSL_MINOR_VERSION_1;
 		break;
 	case TLS_CLIENT_TLS_1_1:
 		mbedtls_ssl_conf_max_version(&ctx->conf,
 			MBEDTLS_SSL_MAJOR_VERSION_3,
 			MBEDTLS_SSL_MINOR_VERSION_2);
+		ctx->minor=MBEDTLS_SSL_MINOR_VERSION_2;
 		break;
 	case TLS_CLIENT_TLS_1_2:
 		mbedtls_ssl_conf_max_version(&ctx->conf,
 			MBEDTLS_SSL_MAJOR_VERSION_3,
 			MBEDTLS_SSL_MINOR_VERSION_3);
+		ctx->minor=MBEDTLS_SSL_MINOR_VERSION_3;
 		break;
 #ifdef MBEDTLS_SSL_MINOR_VERSION_4
 	case TLS_CLIENT_TLS_1_3:
 		mbedtls_ssl_conf_max_version(&ctx->conf,
 			MBEDTLS_SSL_MAJOR_VERSION_3,
 			MBEDTLS_SSL_MINOR_VERSION_4);
+		ctx->minor=MBEDTLS_SSL_MINOR_VERSION_4;
 		break;
 #endif
 	default:return -1;

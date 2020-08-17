@@ -27,19 +27,26 @@ or use client certificates. Related functions are:
 * tls\_client\_get\_alpn
 * tls\_client\_add\_client\_cert
 
+Note that for mbedTLS tls\_client\_get\_tls\_version depends on
+MBEDTLS\_SSL\_RENEGOTIATION (compile time flag) to be the same as for the
+version the tlsclient library was compiled against to actually work.
+As this flag is usually enabled there should typically be no problem.
+
 If you need to you can use session resumption by storing
 session resume data during tls\_client\_disconnect() and reusing
 them in a later tls\_client\_connect(). To get hinting about
 resumption, resume data lifetime and to free the stored resume data use:
-i
+
 * tls\_client\_connection\_is\_resumed
 * tls\_client\_resume\_data\_lifetime\_hint
 * tls\_client\_free\_resume\_data
 
-Note that resumption status is not available per default for mbedTLS
+Note that definite resumption status is not available per default for mbedTLS
 and must be explicitely compile time enabled, as using this functionality
 breaks binary compatability of the tlsclient library and any mbedTLS
-library the tlsclient library was not compiled against.
+library the tlsclient library was not compiled against. The other implemented
+way should be binary compatible but doesn't detect resumption in case of
+self signed certificates.
 
 The following paragraph about OCSP is not valid for the mbedTLS
 backend which does not support any form of OCSP processing.

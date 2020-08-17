@@ -16,8 +16,11 @@ OPENSSL=1
 #
 MBEDTLS=1
 #
-# enable to be able to detect session resumption for mbedTLS,
-# this BREAKS BINARY COMPATABILITY for mbedTLS!!!!
+# enable to be able to definitely detect session resumption for mbedTLS,
+# this BREAKS BINARY COMPATABILITY for mbedTLS!!!! The other implemented
+# way should be binary compatible but doesn't detect resume with self
+# signed certificates.
+#
 #MBEDTLS_DETECT_RESUME=1
 #
 # GnuTLS 3.5 or later
