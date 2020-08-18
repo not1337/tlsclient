@@ -96,9 +96,9 @@ The usage of the emulation is best demonstrated with the included tester
 installed on your system in standard locations and the patched versions
 reside in their respective build directories):
 
-* Emulate Chromium 84 Linux and connect to localhost port 443 (requires OpenSSL):
+* Emulate Chromium 84 Linux and connect to localhost port 443 (requires patched OpenSSL):
 * ./tester -L openssl:gnutls -N chromium84lx localhost
-* Emulate Firefox 78 Linux and connect to localhost port 443 (requires GnuTLS):
+* Emulate Firefox 78 Linux and connect to localhost port 443 (requires patched GnuTLS):
 * ./tester -L openssl:gnutls -N firefox78lx localhost
 
 If you want to create a new emulation you should have a look, what the
