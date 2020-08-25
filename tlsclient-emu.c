@@ -32,6 +32,9 @@
 #include "kiwi_77a10_12.hh"
 #include "kiwi_77a10_2.hh"
 #include "kiwi_77a10_3.hh"
+#include "firefox_79a10_1.hh"
+#include "firefox_79a10_22.hh"
+#include "firefox_79a10_23.hh"
 
 #define ALPNENTRIES	2
 #define MAXCHAIN	2
@@ -255,6 +258,24 @@ static const EMULATION firefox_68a10=
 	{TEMPLATE(firefox_68a10_31),TEMPLATE(firefox_68a10_32)},
 };
 
+static const EMULATION firefox_79a10=
+{
+	1,
+	TLS_CLIENT_EMU_FIREFOX_78_LINUX,
+	TLS_CLIENT_EMU_NO_OPTION,
+	TLS_CLIENT_EMU_NO_OPTION,
+	TLS_CLIENT_EMU_NO_OPTION,
+	-1,
+	{0,1,0,0,0,0,0,0,0},
+	{0,1,0,0,0,0,0,0,0},
+	{1,1,0,0,0,0,0,0,0},
+	{1,1,0,0,0,0,0,0,0},
+	{1,1,0,0,0,0,0,0,0},
+	{TEMPLATE(firefox_79a10_1)},
+	{TEMPLATE(firefox_79a10_22)},
+	{TEMPLATE(firefox_79a10_23)},
+};
+
 static const EMULATION konqueror_50=
 {
 	1,
@@ -377,6 +398,9 @@ void *tls_client_emulation_init(int emulation,int strict)
 		break;
 	case TLS_CLIENT_EMULATION_CHROME_84_ANDROID_10:
 		emu=&chrome_84a10;
+		break;
+	case TLS_CLIENT_EMULATION_FIREFOX_79_ANDROID_10:
+		emu=&firefox_79a10;
 		break;
 
 	default:goto err1;

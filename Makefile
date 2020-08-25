@@ -109,6 +109,7 @@ TDEPS+=konqueror_50_1.hh konqueror_50_2.hh konqueror_50_31.hh konqueror_50_32.hh
 TDEPS+=firefox_68a10_1.hh firefox_68a10_22.hh firefox_68a10_23.hh
 TDEPS+=firefox_68a10_31.hh firefox_68a10_32.hh
 TDEPS+=kiwi_77a10_11.hh kiwi_77a10_12.hh kiwi_77a10_2.hh kiwi_77a10_3.hh
+TDEPS+=firefox_79a10_1.hh firefox_79a10_22.hh firefox_79a10_23.hh
 CDEPS=clientdata.h clientdissect.h clientconstruct.h clientcompose.h
 CDEPS+=clientloader.h
 ifdef OPENSSL
@@ -123,6 +124,7 @@ RDEPS+=regression/firefox_68_android_10.h regression/firefox_78_linux.h
 RDEPS+=regression/kiwi_77_android_10.h regression/konqueror_5_0_linux.h
 RDEPS+=regression/opera_59_android_10.h regression/opera_69_linux.h
 RDEPS+=regression/vivaldi_3_1_android_10.h regression/opera_70_linux.h
+RDEPS+=regression/firefox_79_android_10.h
 endif
 endif
 endif

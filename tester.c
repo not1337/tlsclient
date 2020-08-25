@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #ifdef HTTP2
 #include <nghttp2/nghttp2.h>
@@ -83,6 +84,8 @@ static const struct
 		TLS_CLIENT_EMULATION_VIVALDI_31_ANDROID_10},
 	{"opera70lx","Opera 70.0.3728.95 Linux",
 		TLS_CLIENT_EMULATION_OPERA_70_LINUX},
+	{"firefox79a10","Firefox 79.0.5 Android 10",
+		TLS_CLIENT_EMULATION_FIREFOX_79_ANDROID_10},
 	{NULL,NULL,-1},
 };
 
@@ -719,6 +722,8 @@ int main(int argc,char *argv[])
 			return execv(argv[0],argv);
 		}
 	}
+
+	signal(SIGPIPE,SIG_IGN);
 
 	if(tls_client_global_init())
 	{

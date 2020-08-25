@@ -69,6 +69,7 @@ typedef struct
 #include "regression/opera_69_linux.h"
 #include "regression/vivaldi_3_1_android_10.h"
 #include "regression/opera_70_linux.h"
+#include "regression/firefox_79_android_10.h"
 
 #define BUFSIZE		65536
 
@@ -145,6 +146,8 @@ static const struct
 		TLS_CLIENT_EMULATION_VIVALDI_31_ANDROID_10},
 	{&opera_70_linux,"Opera 70.0.3728.95 Linux",
 		TLS_CLIENT_EMULATION_OPERA_70_LINUX},
+	{&firefox_79_android_10,"Firefox 79.0.5 Android 10",
+		TLS_CLIENT_EMULATION_FIREFOX_79_ANDROID_10},
 	{NULL,NULL,0},
 };
 
@@ -1047,7 +1050,7 @@ static void usage(void)
 		"-t        run named test (see list below)\n"
 		"-p <port> use specified <http-server> port (default 443)\n"
 		"\n"
-		"The <http-server> mut be configured for TLSv1.2 or TLSv1.3\n"
+		"The <http-server> must be configured for TLSv1.2 or TLSv1.3\n"
 		"according to the test(s) to be executed.\n\n"
 		"Available tests are:\n\n");
 	for(i=0;tests[i].name;i++)fprintf(stderr,"%-10s  %s\n",
