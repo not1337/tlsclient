@@ -124,7 +124,8 @@ RDEPS+=regression/firefox_68_android_10.h regression/firefox_78_linux.h
 RDEPS+=regression/kiwi_77_android_10.h regression/konqueror_5_0_linux.h
 RDEPS+=regression/opera_59_android_10.h regression/opera_69_linux.h
 RDEPS+=regression/vivaldi_3_1_android_10.h regression/opera_70_linux.h
-RDEPS+=regression/firefox_79_android_10.h
+RDEPS+=regression/firefox_79_android_10.h regression/brave_1_12_android_10.h
+RDEPS+=regression/vivaldi_3_2_android_10.h
 endif
 endif
 endif

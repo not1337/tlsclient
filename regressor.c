@@ -70,6 +70,8 @@ typedef struct
 #include "regression/vivaldi_3_1_android_10.h"
 #include "regression/opera_70_linux.h"
 #include "regression/firefox_79_android_10.h"
+#include "regression/brave_1_12_android_10.h"
+#include "regression/vivaldi_3_2_android_10.h"
 
 #define BUFSIZE		65536
 
@@ -126,6 +128,8 @@ static const struct
 		TLS_CLIENT_EMULATION_BRAVE_110_LINUX},
 	{&brave_1_11_android_10,"Brave 1.11.105 Android 10",
 		TLS_CLIENT_EMULATION_BRAVE_111_ANDROID_10},
+	{&brave_1_12_android_10,"Brave 1.12.113 Android 10",
+		TLS_CLIENT_EMULATION_BRAVE_112_ANDROID_10},
 	{&chrome_84_android_10,"Chrome 84.0.4147.111 Android 10",
 		TLS_CLIENT_EMULATION_CHROME_84_ANDROID_10},
 	{&chromium_84_linux,"Chromium 84.0.4147.89 Linux",
@@ -134,6 +138,8 @@ static const struct
 		TLS_CLIENT_EMULATION_FIREFOX_68_ANDROID_10},
 	{&firefox_78_linux,"Firefox 78.0.2 Linux",
 		TLS_CLIENT_EMULATION_FIREFOX_78_LINUX},
+	{&firefox_79_android_10,"Firefox 79.0.5 Android 10",
+		TLS_CLIENT_EMULATION_FIREFOX_79_ANDROID_10},
 	{&kiwi_77_android_10,"Kiwi 77.0.3865.92 Android 10",
 		TLS_CLIENT_EMULATION_KIWI_77_ANDROID_10},
 	{&konqueror_5_0_linux,"Konqueror 5.0.97 Linux",
@@ -142,12 +148,12 @@ static const struct
 		TLS_CLIENT_EMULATION_OPERA_59_ANDROID_10},
 	{&opera_69_linux,"Opera 69.0.3686.77 Linux",
 		TLS_CLIENT_EMULATION_OPERA_69_LINUX},
-	{&vivaldi_3_1_android_10,"Vivaldi 3.1.1935.19 Android 10",
-		TLS_CLIENT_EMULATION_VIVALDI_31_ANDROID_10},
 	{&opera_70_linux,"Opera 70.0.3728.95 Linux",
 		TLS_CLIENT_EMULATION_OPERA_70_LINUX},
-	{&firefox_79_android_10,"Firefox 79.0.5 Android 10",
-		TLS_CLIENT_EMULATION_FIREFOX_79_ANDROID_10},
+	{&vivaldi_3_1_android_10,"Vivaldi 3.1.1935.19 Android 10",
+		TLS_CLIENT_EMULATION_VIVALDI_31_ANDROID_10},
+	{&vivaldi_3_2_android_10,"Vivaldi 3.2.1996.26 Android 10",
+		TLS_CLIENT_EMULATION_VIVALDI_32_ANDROID_10},
 	{NULL,NULL,0},
 };
 

@@ -164,6 +164,25 @@ static const EMULATION brave_111a10=
 	{TEMPLATE(chromium_84_31),TEMPLATE(chromium_84_32)},
 };
 
+static const EMULATION brave_112a10=
+{
+	1,
+	TLS_CLIENT_EMU_CHROMIUM_84_LINUX,
+	TLS_CLIENT_EMU_NO_OPTION,
+	TLS_CLIENT_EMU_NO_CERT_BROTLI,
+	TLS_CLIENT_EMU_NO_OPTION,
+	-1,
+	{1,1,0,0,0,0,0,0,0},
+	{1,1,1,0,1,0,0,0,0},
+	{2,1,1,0,0,0,0,0,0},
+	{2,1,1,0,0,0,0,0,0},
+	{1,1,1,1,1,0,0,0,0},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_2)},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_31),TEMPLATE(chromium_84_32)},
+};
+
 static const EMULATION vivaldi31a10=
 {
 	1,
@@ -177,6 +196,25 @@ static const EMULATION vivaldi31a10=
 	{1,2,2,1,2,0,0,0,0},
 	{2,1,1,0,0,0,0,0,0},
 	{1,1,1,1,1,1,1,0,0},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_2)},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_31),TEMPLATE(chromium_84_32)},
+};
+
+static const EMULATION vivaldi32a10=
+{
+	1,
+	TLS_CLIENT_EMU_CHROMIUM_84_LINUX,
+	TLS_CLIENT_EMU_NO_OPTION,
+	TLS_CLIENT_EMU_NO_CERT_BROTLI,
+	TLS_CLIENT_EMU_NO_OPTION,
+	-1,
+	{1,1,1,0,0,0,0,0,0},
+	{0,1,1,1,0,0,0,0,0},
+	{1,1,1,1,1,0,0,0,0},
+	{2,1,1,0,0,0,0,0,0},
+	{1,1,1,1,1,0,0,0,0},
 	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
 	{TEMPLATE(chromium_84_2)},
 	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
@@ -401,6 +439,12 @@ void *tls_client_emulation_init(int emulation,int strict)
 		break;
 	case TLS_CLIENT_EMULATION_FIREFOX_79_ANDROID_10:
 		emu=&firefox_79a10;
+		break;
+	case TLS_CLIENT_EMULATION_BRAVE_112_ANDROID_10:
+		emu=&brave_112a10;
+		break;
+	case TLS_CLIENT_EMULATION_VIVALDI_32_ANDROID_10:
+		emu=&vivaldi32a10;
 		break;
 
 	default:goto err1;
