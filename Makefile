@@ -43,8 +43,8 @@ HDRDIR=/usr/local/include
 # compiler and flags
 #
 CC=gcc
-CFLAGS=-O2
-LFLAGS=-s
+CFLAGS=-O2 -g
+LFLAGS=-g
 #
 # enable the to actually remove all unreferenced code:
 #
@@ -125,7 +125,7 @@ RDEPS+=regression/kiwi_77_android_10.h regression/konqueror_5_0_linux.h
 RDEPS+=regression/opera_59_android_10.h regression/opera_69_linux.h
 RDEPS+=regression/vivaldi_3_1_android_10.h regression/opera_70_linux.h
 RDEPS+=regression/firefox_79_android_10.h regression/brave_1_12_android_10.h
-RDEPS+=regression/vivaldi_3_2_android_10.h
+RDEPS+=regression/vivaldi_3_2_android_10.h regression/chromium_85_linux.h
 endif
 endif
 endif

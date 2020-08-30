@@ -72,6 +72,7 @@ typedef struct
 #include "regression/firefox_79_android_10.h"
 #include "regression/brave_1_12_android_10.h"
 #include "regression/vivaldi_3_2_android_10.h"
+#include "regression/chromium_85_linux.h"
 
 #define BUFSIZE		65536
 
@@ -134,6 +135,8 @@ static const struct
 		TLS_CLIENT_EMULATION_CHROME_84_ANDROID_10},
 	{&chromium_84_linux,"Chromium 84.0.4147.89 Linux",
 		TLS_CLIENT_EMULATION_CHROMIUM_84_LINUX},
+	{&chromium_85_linux,"Chromium 85.0.4183.83 Linux",
+		TLS_CLIENT_EMULATION_CHROMIUM_85_LINUX},
 	{&firefox_68_android_10,"Firefox 68.11.0 Android 10",
 		TLS_CLIENT_EMULATION_FIREFOX_68_ANDROID_10},
 	{&firefox_78_linux,"Firefox 78.0.2 Linux",

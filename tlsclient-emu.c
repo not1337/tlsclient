@@ -88,6 +88,25 @@ static const EMULATION chromium_84=
 	{TEMPLATE(chromium_84_31),TEMPLATE(chromium_84_32)},
 };
 
+static const EMULATION chromium_85=
+{
+	1,
+	TLS_CLIENT_EMU_CHROMIUM_84_LINUX,
+	TLS_CLIENT_EMU_NO_OPTION,
+	TLS_CLIENT_EMU_NO_CERT_BROTLI,
+	TLS_CLIENT_EMU_NO_OPTION,
+	-1,
+	{1,1,1,0,0,0,0,0,0},
+	{1,1,0,0,0,0,0,0,0},
+	{2,1,1,0,0,0,0,0,0},
+	{2,1,1,0,0,0,0,0,0},
+	{2,1,1,0,0,0,0,0,0},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_2)},
+	{TEMPLATE(chromium_84_11),TEMPLATE(chromium_84_12)},
+	{TEMPLATE(chromium_84_31),TEMPLATE(chromium_84_32)},
+};
+
 static const EMULATION brave_110=
 {
 	1,
@@ -445,6 +464,9 @@ void *tls_client_emulation_init(int emulation,int strict)
 		break;
 	case TLS_CLIENT_EMULATION_VIVALDI_32_ANDROID_10:
 		emu=&vivaldi32a10;
+		break;
+	case TLS_CLIENT_EMULATION_CHROMIUM_85_LINUX:
+		emu=&chromium_85;
 		break;
 
 	default:goto err1;

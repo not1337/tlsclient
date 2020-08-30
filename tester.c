@@ -70,6 +70,8 @@ static const struct
 		TLS_CLIENT_EMULATION_CHROME_84_ANDROID_10},
 	{"chromium84lx","Chromium 84.0.4147.89 Linux",
 		TLS_CLIENT_EMULATION_CHROMIUM_84_LINUX},
+	{"chromium85lx","Chromium 85.0.4183.83 Linux",
+		TLS_CLIENT_EMULATION_CHROMIUM_85_LINUX},
 	{"firefox68a10","Firefox 68.11.0 Android 10",
 		TLS_CLIENT_EMULATION_FIREFOX_68_ANDROID_10},
 	{"firefox78lx","Firefox 78.0.2 Linux",
